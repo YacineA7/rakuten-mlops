@@ -6,8 +6,9 @@ import numpy as np
 from scipy import sparse
 from xgboost import XGBClassifier
 
+
 ARTIFACTS_DIR = Path("artifacts") # Dossier contenant les artéfacts (données, encoder etc...)
-MODEL_DIR = Path("model") # Dossier pour enregistrer le modèle entraîné
+MODEL_DIR = Path("model") # Dossier où est enregistré le modèle entraîné
 MODEL_DIR.mkdir(parents=True, exist_ok=True) # Création du dossier si il n'existe pas
 
 
