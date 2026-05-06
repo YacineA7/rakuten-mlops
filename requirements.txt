@@ -1,0 +1,17 @@
+numpy == 2.4.2
+pandas == 2.3.3
+matplotlib == 3.10.8
+scikit_learn == 1.8.0
+langdetect == 1.0.9
+nltk == 3.9.3
+wordcloud == 1.9.6
+seaborn == 0.13.2
+streamlit == 1.54.0
+opencv-python == 4.13.0.92
+pillow == 11.1.0
+xgboost == 3.1.1
+scikit-optimize
+tensorflow == 2.21.0
+keras
+grad-cam
+lime
