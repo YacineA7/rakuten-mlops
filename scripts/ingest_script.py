@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, LabelEncoder
-
+from pathlib import Path
 from sklearn.metrics import classification_report, confusion_matrix, f1_score, log_loss
 from sklearn.pipeline import Pipeline
 from skopt import BayesSearchCV
@@ -10,161 +10,145 @@ from skopt.space import Real
 import matplotlib.pyplot as plt
 from sklearn.metrics import ConfusionMatrixDisplay
 import os
-import warnings
+import warnings()
 warnings.filterwarnings('ignore')
 
-# ============================================================
-# ETAPE 1 — LECTURE DES DONNÉES
-# ============================================================
-print("=== ETAPE 1 : Chargement des données ===")
+DATA_DIR = Path("data/raw")
+ARTIFACTS_DIR = Path("artifacts") # Dossier contenant les artéfacts (données, encoder etc...)
 
-X_train_init = pd.read_csv("../data/X_train_update.csv", nrows=50000)
-y_train_init = pd.read_csv("../data/Y_train_CVw08PX.csv", nrows=10000)
-X_test_init  = pd.read_csv("../data/X_test_update.csv", nrows=50000)
-
-print(f"X_train : {X_train_init.shape}")
-print(f"y_train : {y_train_init.shape}")
-print(f"X_test  : {X_test_init.shape}")
+X_TRAIN_PATH = DATA_DIR / "X_train_update.csv"
+Y_TRAIN_PATH = DATA_DIR / "Y_train_CVw08PX.csv" 
 
 
-# ============================================================
-# ETAPE 2 — ALIGNEMENT DES DONNÉES
-# ============================================================
-print("\n=== ETAPE 2 : Alignement des données ===")
+# Fonction de chrgement des données brutes 
 
-# Alignement de X_train sur y_train (10 000 lignes)
-X_train_init = X_train_init.iloc[:len(y_train_init)]
-print(f"X_train après alignement : {X_train_init.shape}")
-print(f"y_train                  : {y_train_init.shape}")
+def load_rawdata(X_PATH,Y_PATH):
+    """Charge les données d'entraînement et de validation à partir des fichiers .npz"""
+    X_train = pd.read_csv(X_TRAIN_PATH )
+    y_train = pd.read_csv(Y_TRAIN_PATH )
 
-
-# ============================================================
-# ETAPE 3 — NETTOYAGE DES DONNÉES
-# ============================================================
-print("\n=== ETAPE 3 : Nettoyage des données ===")
-
-# Vérification des valeurs manquantes
-print("Valeurs manquantes X_train :", X_train_init.isnull().sum().sum())
-print("Valeurs manquantes y_train :", y_train_init.isnull().sum().sum())
-print("Valeurs manquantes X_test  :", X_test_init.isnull().sum().sum())
-
-# Suppression des valeurs manquantes
-X_train_init = X_train_init.dropna()
-X_test_init  = X_test_init.dropna()
-
-# Réalignement après suppression
-y_train_init = y_train_init.iloc[:len(X_train_init)]
-print(f"Après nettoyage — X_train : {X_train_init.shape}, y_train : {y_train_init.shape}")
+    raw_data = pd.merge(X_train,y_train,left_index=True,right_index= True)
+    # supprission des colonnes supp
+    raw_data = raw_data.drop(['Unnamed: 0_y'], axis=1)
+    raw_data.rename(columns={'Unnamed: 0_x': 'id'}, inplace=True)  
+    raw_data.set_index(['id'], inplace=True)
 
 
-# ============================================================
-# ETAPE 4 — PRÉPARATION DES VARIABLES
-# ============================================================
-print("\n=== ETAPE 4 : Préparation des variables ===")
+    return raw_data 
 
-# Récupération de la variable cible
-y = y_train_init.iloc[:, 0]
 
-# Encodage si la cible est textuelle
-if y.dtype == 'object':
+#Fonction de nettoyage du texte simple pour les colonnes de texte
+import re
+
+def clean_text(text):
+    """
+    Nettoyage de base des raw_data  : suppression des balises HTML, des URLs, conversion en minuscules, suppression de la ponctuation et des chiffres.
+    """
+    if pd.isnull(text):
+        return ""
+
+    # Suppression des balises HTML
+    text = re.sub(r'<.*?>', '', text)
+
+    # Remplacement des <br /> par un espace
+    text = text.replace(r'<br />', ' ')
+
+    # Remplacement des référence de caractère HTML
+    text = text.replace(r'&amp;', '&')
+    text = text.replace(r'&nbsp;', ' ')
+    text = text.replace(r'&lt', '<')
+    text = text.replace(r'&gt', '>')
+    text = text.replace(r'&quot', '"')
+    text = text.replace(r'&#39', "'")
+    text = text.replace(r'&eacute', 'e')
+    text = text.replace(r'&egrave', 'e')
+    text = text.replace(r'&ecirc', 'e')
+
+    # Suppression des URLs et des liens  
+    text = re.sub(r"http\S+|www\.\S+", " ", text)
+
+    # Conversion en minuscules
+    text = text.lower()
+
+    # Suppression des espaces supplémentaires
+    text = re.sub(r'\s+', ' ', text).strip()
+
+    # Suppression de la ponctuation
+    text = re.sub(r'[^\w\s]', '', text)
+
+    # Suppression des chiffres
+    text = re.sub(r'\d+', '', text)
+
+    return text 
+
+def built_text(df):
+    
+    '''
+    assemblage de deux colonnes: les colonnes description et désignations sont jointes l'uneà l'autres '''
+
+
+
+    # Nettoyage du texte simple pour les colonnes de texte
+    df['clean_designation'] = df['designation'].apply(clean_text)
+    df['clean_description'] = df['description'].apply(clean_text)
+
+    df['text'] = df['clean_designation'] + ' ' + df['clean_description']
+
+    return df["text"]
+
+
+
+# "Générique" est un terme générique et non discriminant pour différencier les classes de produits, on l'ajoute à la liste des stopwords
+stop_all.add("générique")
+
+
+def delete_stopwords(text):
+    """
+    Suppression des mots vides (stopwords)
+    """
+    return " ".join([w for w in text.split() if w not in stop_all and len(w) > 1])  # Garde mots > 1 caractère
+
+# Application de la suppression des stopwords
+clean_data["text_nostop"] = clean_data['text'].apply(delete_stopwords)  # Texte sans stopwords
+
+# Stemming français (réduction des mots à leur racine)
+stemmer = SnowballStemmer("french")  # Stemmer optimisé pour le français
+def stem_text(text):
+    """
+    Application du stemming sur chaque mot
+    """
+    return " ".join([stemmer.stem(w) for w in text.split()])  # Stemming mot par mot 
+
+
+    
+
+# Préparation des données pour l'analyse de texte
+X = clean_data['text_nostop']
+y = clean_data['prdtypecode']
+
+# Encodage des labels de la variable cible avec LabelEncoder
+
+def label_encoder(text): 
     le = LabelEncoder()
-    y = le.fit_transform(y)
-    print(f"Classes encodées : {le.classes_}")
+    y_enc = le.fit_transform(y)
 
-# Séparation train / validation
-X_train, X_val, y_train, y_val = train_test_split(
-    X_train_init, y,
-    test_size=0.2,
-    random_state=42,
-    stratify=y
-)
-print(f"X_train : {X_train.shape}, X_val : {X_val.shape}")
+return label_encoder(text)
 
 
-# ============================================================
-# ETAPE 5 — NORMALISATION
-# ============================================================
-print("\n=== ETAPE 5 : Normalisation ===")
 
-scaler = StandardScaler()
-X_train_scaled = scaler.fit_transform(X_train)
-X_val_scaled   = scaler.transform(X_val)
-X_test_scaled  = scaler.transform(X_test_init)
-
-print("Normalisation effectuée ✅")
-
-
-# ============================================================
-# ETAPE 6 — OPTIMISATION BAYÉSIENNE
-# ============================================================
-print("\n=== ETAPE 6 : BayesSearchCV ===")
-
-espace_recherche = {
-    'C': Real(1e-4, 1e+2, prior='log-uniform'),
-}
-
-bayes_search = BayesSearchCV(
-    estimator=SVC(kernel='linear', probability=True, class_weight='balanced'),
-    search_spaces=espace_recherche,
-    n_iter=30,
-    cv=5,
-    scoring='accuracy',
-    n_jobs=-1,
-    random_state=42,
-    verbose=1
+# Création des ensembles d'entraînement et de test pour l'analyse de texte (20% pour le test)
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y_enc, test_size=0.2, random_state=42, stratify=y_enc
 )
 
-bayes_search.fit(X_train_scaled, y_train)
+# Initialisation de TfidfVectorizer avec des paramètres pour limiter le nombre de features et les n-grams
+tfidf = TfidfVectorizer(
+    max_features=50000,
+    ngram_range=(1, 2),
+    min_df=2,
+    max_df=0.95
+)
 
-print(f"\nC optimal       : {bayes_search.best_params_['C']:.6f}")
-print(f"Meilleur score CV : {bayes_search.best_score_*100:.2f}%")
-
-
-# ============================================================
-# ETAPE 7 — ÉVALUATION DU MODÈLE
-# ============================================================
-print("\n=== ETAPE 7 : Évaluation ===")
-
-meilleur_modele = bayes_search.best_estimator_
-y_pred  = meilleur_modele.predict(X_val_scaled)
-y_proba = meilleur_modele.predict_proba(X_val_scaled)
-
-# Rapport de classification
-print("\nRapport de classification :")
-print(classification_report(y_val, y_pred))
-
-# F1-score
-f1 = f1_score(y_val, y_pred, average='weighted')
-print(f"F1-score  : {f1:.4f}")
-
-# Cross-entropy
-ce = log_loss(y_val, y_proba)
-print(f"Cross-entropy : {ce:.4f}")
-
-
-# ============================================================
-# ETAPE 8 — MATRICE DE CONFUSION
-# ============================================================
-print("\n=== ETAPE 8 : Matrice de confusion ===")
-
-cm = confusion_matrix(y_val, y_pred)
-disp = ConfusionMatrixDisplay(confusion_matrix=cm)
-disp.plot(cmap="Greens", values_format="d")
-plt.title("Matrice de confusion - SVM Linéaire")
-plt.tight_layout()
-plt.savefig("../reports/figures/confusion_matrix_SVM.png", dpi=150, bbox_inches="tight")
-plt.show()
-
-
-# ============================================================
-# ETAPE 9 — PRÉDICTION SUR X_TEST
-# ============================================================
-print("\n=== ETAPE 9 : Prédictions finales ===")
-
-y_test_pred = meilleur_modele.predict(X_test_scaled)
-print(f"Prédictions générées : {len(y_test_pred)} lignes")
-
-# Sauvegarde des prédictions
-predictions = pd.DataFrame({'prediction': y_test_pred})
-predictions.to_csv("../reports/predictions_SVM.csv", index=False)
-print("Prédictions sauvegardées ✅")
+# Vectorisation du texte avec TF-IDF
+X_train_tfidf = tfidf.fit_transform(X_train)
+X_test_tfidf = tfidf.transform(X_test)
