@@ -102,16 +102,16 @@ def clean_text(text) -> str:
     # Conversion en minuscules
     text = text.lower()
 
-    # Suppression des espaces supplémentaires
-    text = re.sub(r'\s+', ' ', text).strip()
-
     # Suppression de la ponctuation
     text = re.sub(r'[^\w\s]', '', text)
 
     # Suppression des chiffres
     text = re.sub(r'\d+', '', text)
 
-    return text 
+    # Normalisation des espaces après nettoyage
+    text = re.sub(r'\s+', ' ', text).strip()
+
+    return text
 
 
 def built_text(df: pd.DataFrame) -> pd.Series:

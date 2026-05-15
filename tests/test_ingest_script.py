@@ -60,5 +60,5 @@ def test_built_text() -> None:
         'description': ['Description A', 'Description B']
     })
     result = ingest_script.built_text(df)
-    expected = pd.Series(['produit a description a', 'produit b description b'])
+    expected = pd.Series(['produit a description a', 'produit b description b'], name='text')
     pd.testing.assert_series_equal(result, expected)
