@@ -13,6 +13,8 @@ Ce module illustre une structure claire :
 """
 
 
+import re
+import nltk
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
@@ -21,6 +23,8 @@ from pathlib import Path
 from sklearn.pipeline import Pipeline
 import matplotlib.pyplot as plt
 from sklearn.metrics import ConfusionMatrixDisplay
+from nltk.corpus import stopwords
+from nltk.stem import SnowballStemmer
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -37,10 +41,10 @@ LABEL_ENCODER_PATH = ARTIFACTS_DIR / "label_encoder.pkl"
 MODEL_PATH = MODEL_DIR / "xgb_model.joblib"
 
 
-def load_data(X_VALIDE_PATH:path)
-    """Charge les données de validation à partir du fichier .csv"""
+def load_data(X_VALIDE_PATH: Path) -> pd.DataFrame:
+    """Charge les données de validation à partir du fichier .csv."""
     X_valid = pd.read_csv(X_VALIDE_PATH, index_col="id")
-    return X_valid 
+    return X_valid
 
 def clean_text(text) -> str:
     """
@@ -72,23 +76,22 @@ def clean_text(text) -> str:
     # Conversion en minuscules
     text = text.lower()
 
-    # Suppression des espaces supplémentaires
-    text = re.sub(r'\s+', ' ', text).strip()
-
     # Suppression de la ponctuation
     text = re.sub(r'[^\w\s]', '', text)
 
     # Suppression des chiffres
     text = re.sub(r'\d+', '', text)
 
-    return text 
+    # Normalisation des espaces après nettoyage
+    text = re.sub(r'\s+', ' ', text).strip()
+
+    return text
 
 
 def built_text(df: pd.DataFrame) -> pd.Series:
-    
-    """"
-    Nettoyage du texte et création de la colonne "text" en concaténant les colonnes "designation" et "description" 
-    Après nettoyage du corpus avec la fonction clean_text
+    """
+    Nettoyage du texte et création de la colonne "text" en concaténant les colonnes "designation" et "description".
+    Après nettoyage du corpus avec la fonction clean_text.
     """
 
      # Nettoyage du texte simple pour les colonnes de texte
