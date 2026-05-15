@@ -1,13 +1,16 @@
 """
-Script de démonstration conforme à PEP8.
+Script d'ingestion des rawdata qui sera conforme à PEP8.
 
 Ce module illustre une structure claire :
-- imports regroupés
-- constantes en majuscules
-- fonctions bien nommées
-- point d'entrée principal
-- gestion des arguments
-- journalisation
+- imports des rawdatas
+- Préparation du text avant son nettoyyage 
+- Etape de nettoyage du set 
+- Ensuite vient l'assemblage de deux colonnes  de texte 
+- Supprission des stopwords (EN & FR )
+- Encodage de l'ensemble du set 
+- Véctorisation du steeming avec TF-IDF 
+- Ajouter étape de la sauvegarde de l'ensembledes fonctions 
+- Faire appel à la fonction main à la toute fin 
 """
 
 
