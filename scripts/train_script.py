@@ -88,7 +88,7 @@ def save_model(model, model_dir: Path, num_classes: int):
 
 def main():
     """Fonction principale pour l'entrainement du modèle"""
-    X_train, y_train, X_valid, y_valid = load_data()
+    X_train, y_train, X_valid, y_valid = load_data() # Chargement des données d'entraînement et de validation prétraitées
     num_classes = len(np.unique(y_train)) # Détermine le nombre de classes à partir des étiquettes d'entraînement
     model = build_model(num_classes)
     model = train_model(model, X_train, y_train, X_valid, y_valid)

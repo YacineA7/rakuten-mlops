@@ -11,8 +11,10 @@ Ce module illustre une structure claire :
 """
 
 
+import nltk
 import pandas as pd
 import numpy as np
+from scipy import sparse
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from pathlib import Path
@@ -21,9 +23,17 @@ from skopt import BayesSearchCV
 from skopt.space import Real
 import matplotlib.pyplot as plt
 from sklearn.metrics import ConfusionMatrixDisplay
+from sklearn.feature_extraction.text import TfidfVectorizer
+
+import json
+import joblib
 import os
 import warnings
 import re
+import nltk
+from nltk.corpus import stopwords
+from nltk.stem import SnowballStemmer
+
 warnings.filterwarnings('ignore')
 
 DATA_DIR = Path("data/raw")
@@ -59,7 +69,7 @@ def load_rawdata(x_path: Path, y_path: Path) -> pd.DataFrame:
 # sera stabilisé.
 
 
-def clean_text(text):
+def clean_text(text) -> str:
     """
     Nettoyage de base des raw_data  : suppression des balises HTML, des URLs, conversion en minuscules, suppression de la ponctuation et des chiffres.
     """
@@ -100,74 +110,167 @@ def clean_text(text):
 
     return text 
 
-def built_text(df):
+
+def built_text(df: pd.DataFrame) -> pd.Series:
     
-    '''
-    assemblage de deux colonnes: les colonnes description et désignations sont jointes l'uneà l'autres '''
+    """"
+    Nettoyage du texte et création de la colonne "text" en concaténant les colonnes "designation" et "description" 
+    Après nettoyage du corpus avec la fonction clean_text
+    """
 
      # Nettoyage du texte simple pour les colonnes de texte
     df['clean_designation'] = df['designation'].apply(clean_text)
     df['clean_description'] = df['description'].apply(clean_text)
 
+    # Concatenation designation + description dans une nouvelle colonne "text" pour l'analyse de texte
     df['text'] = df['clean_designation'] + ' ' + df['clean_description']
 
     return df["text"]
 
 
+def build_stopword_set() -> set:
+    """
+    Construit l'ensemble des stopwords français et anglais, ainsi que le mot "generique" (omniprésent dans les textes).
+    """
+    nltk.download("stopwords", quiet=True)
+
+    stop_fr = set(stopwords.words("french"))
+    stop_en = set(stopwords.words("english"))
+
+    stop_set = stop_fr.union(stop_en) # Combine les stopwords français et anglais
+    stop_set.add("generique") # Ajoute le mot "generique" à l'ensemble des stopwords
+
+    return stop_set
 
 
-
-# "Générique" est un terme générique et non discriminant pour différencier les classes de produits, on l'ajoute à la liste des stopwords
-stop_all.add("générique")
-
-
-def delete_stopwords(text):
+def delete_stopwords(text: str, stop_set: set):
     """
     Suppression des mots vides (stopwords)
     """
-    return " ".join([w for w in text.split() if w not in stop_all and len(w) > 1])  # Garde mots > 1 caractère
+    tokens = [
+        w for w in text.split()
+        if w not in stop_set and len(w) > 1  # Garde mots > 1 caractère
+    ]
+    return " ".join(tokens) 
 
-# Application de la suppression des stopwords
-clean_data["text_nostop"] = clean_data['text'].apply(delete_stopwords)  # Texte sans stopwords
 
-# Stemming français (réduction des mots à leur racine)
-stemmer = SnowballStemmer("french")  # Stemmer optimisé pour le français
-def stem_text(text):
+def stem_text(text: str, stemmer: SnowballStemmer) -> str:
     """
-    Application du stemming sur chaque mot
+    Application du stemming français sur chaque mot
     """
-    return " ".join([stemmer.stem(w) for w in text.split()])  # Stemming mot par mot 
+    tokens = [stemmer.stem(w) for w in text.split()] # Stemming mot par mot 
+    return " ".join(tokens)  
 
-
-    
-
-# Préparation des données pour l'analyse de texte
-X = clean_data['text_nostop']
-y = clean_data['prdtypecode']
 
 # Encodage des labels de la variable cible avec LabelEncoder
-
-def label_encoder(text): 
+def label_encoder(y: pd.Series) -> tuple[np.ndarray, LabelEncoder]:
+    """
+    Encodage des 27 labels de la variable cible avec LabelEncoder en entiers de 0 à 26, 
+    Retourne à la fois les labels encodés et l'objet LabelEncoder pour pouvoir faire l'inverse_transform plus tard
+    """
     le = LabelEncoder()
     y_enc = le.fit_transform(y)
-
-return label_encoder(text)
-
+    return y_enc, le
 
 
-# Création des ensembles d'entraînement et de test pour l'analyse de texte (20% pour le test)
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y_enc, test_size=0.2, random_state=42, stratify=y_enc
-)
+def split_data(X: pd.Series, y: np.ndarray) -> tuple:
+    """
+    Séparation des données en un ensemble d'entraînement (80%) et de validation (20%) 
+    avec stratification pour conserver la même distribution de classes dans les deux ensembles.
+    random_state fixé pour la reproductibilité.
+    """
+    X_train, X_valid, y_train, y_valid = train_test_split(
+        X, y, 
+        test_size=0.2, 
+        random_state=42, 
+        stratify=y
+    )
 
-# Initialisation de TfidfVectorizer avec des paramètres pour limiter le nombre de features et les n-grams
-tfidf = TfidfVectorizer(
-    max_features=50000,
-    ngram_range=(1, 2),
-    min_df=2,
-    max_df=0.95
-)
+    return X_train, X_valid, y_train, y_valid
 
-# Vectorisation du texte avec TF-IDF
-X_train_tfidf = tfidf.fit_transform(X_train)
-X_test_tfidf = tfidf.transform(X_test)
+def vectorize_text(X_train: pd.Series, X_valid: pd.Series) -> tuple:
+    """
+    Vectorisation du texte avec TfidfVectorizer, 
+    Retourne les matrices TF-IDF pour l'entraînement et la validation.
+    Retourne aussi le TfidfVectorizer pour pouvoir faire la même transformation sur les données de test et dans l'API plus tard.
+    """
+    # Initialisation de TfidfVectorizer avec des paramètres pour limiter le nombre de features et les n-grams
+    tfidf = TfidfVectorizer(
+        max_features=50000,
+        ngram_range=(1, 2),
+        min_df=2,
+        max_df=0.95
+    )
+
+    # Vectorisation du texte avec TF-IDF
+    X_train_tfidf = tfidf.fit_transform(X_train)
+    X_valid_tfidf = tfidf.transform(X_valid)
+
+    return X_train_tfidf, X_valid_tfidf, tfidf
+
+def save_artifacts(X_train, y_train, X_valid, y_valid, tfidf, label_encoder, artifacts_dir: Path):
+    """
+    Enregistre les artéfacts de l'ingestion et du préprocessing :
+    - Matrices TF-IDF d'entraînement et de validation
+    - Labels encodés d'entraînement et de validation
+    - TfidfVectorizer pour la vectorisation 
+    - LabelEncoder pour l'encodage  des labels
+    """
+    sparse.save_npz(artifacts_dir / "X_train.npz", X_train) # Enregistre la matrice TF-IDF d'entraînement
+    np.save(artifacts_dir / "y_train.npy", y_train) # Enregistre les labels encodés d'entraînement
+
+    sparse.save_npz(artifacts_dir / "X_valid.npz", X_valid) # Enregistre la matrice TF-IDF de validation
+    np.save(artifacts_dir / "y_valid.npy", y_valid) # Enregistre les labels encodés de validation
+
+    joblib.dump(tfidf, artifacts_dir / "tfidf_vectorizer.pkl") # Enregistre le TfidfVectorizer pour pouvoir faire la même transformation sur les données de test et dans l'API plus tard
+    joblib.dump(label_encoder, artifacts_dir / "label_encoder.pkl") # Enregistre le LabelEncoder pour pouvoir faire l'inverse_transform plus tard (déchiffrage des classes encodées en labels originaux)
+
+    ingestion_metadata = {
+        "ingestion_date": pd.Timestamp.now().isoformat(),
+        "X_train_shape": list(X_train.shape), # Dimensions de la matrices d'entraînement
+        "X_valid_shape": list(X_valid.shape), # Dimensions de la matrices de validation
+        "n_train_samples": int(X_train.shape[0]), # Nombre d'exemples d'entraînement
+        "n_valid_samples": int(X_valid.shape[0]), # Nombre d'exemples de validation
+        "n_features_tfidf": int(X_train.shape[1]), # Nombre de features après vectorisation
+        "n_classes": int(len(label_encoder.classes_)), # Nombre de classes cibles
+        "classes": label_encoder.classes_.tolist(), # Liste des classes cibles
+        "split": {
+            "test_size" : 0.2,
+            "random_state": 42,
+            "stratify": True
+        },
+        "tfidf_params": {
+            "max_features": 50000,
+            "ngram_range": (1, 2),
+            "min_df": 2,
+            "max_df": 0.95
+        }
+    }
+
+    with open(artifacts_dir / "ingestion_metadata.json", "w") as f:
+        json.dump(ingestion_metadata, f)
+
+    print(f"Artifacts enregistrés dans {artifacts_dir}")
+
+
+
+    def main():
+        df = load_rawdata(X_TRAIN_PATH, Y_TRAIN_PATH) # Chargement des données brutes
+        corpus = built_text(df) # Nettoyage du texte et création de la colonne "text"
+        stop_set = build_stopword_set() # Construction de l'ensemble de stopwords
+        stemmer = SnowballStemmer("french") # Initialisation du stemmer français
+        corpus_cleaned = corpus.apply(lambda x: delete_stopwords(x, stop_set)) # Suppression des stopwords
+        corpus_stemmed = corpus_cleaned.apply(lambda x: stem_text(x, stemmer)) # Application du stemming sur le texte nettoyé
+        y_enc, le = label_encoder(df["prdtypecode"]) # Encodage des labels de la variable cible
+        X_train, X_valid, y_train, y_valid = split_data(corpus_stemmed, y_enc) # Séparation des données en un ensemble d'entraînement et de validation
+        X_train_tfidf, X_valid_tfidf, tfidf = vectorize_text(X_train, X_valid) # Vectorisation du texte avec TfidfVectorizer
+
+        save_artifacts( # Enregistrement des artéfacts de l'ingestion et du préprocessing
+            X_train_tfidf, y_train,
+            X_valid_tfidf, y_valid,
+            tfidf, le,
+            ARTIFACTS_DIR 
+        )
+
+    if __name__ == "__main__":
+        main()
