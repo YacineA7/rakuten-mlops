@@ -27,3 +27,38 @@ def test_load_rawdata_merges_and_sets_index() -> None:
         )
 
         pd.testing.assert_frame_equal(result, expected)
+
+
+def test_clean_text_basic() -> None:
+    """Test de base pour la fonction clean_text."""
+    text = "<p>Hello &amp; world! 123</p>"
+    expected = "hello world"
+    result = ingest_script.clean_text(text)
+    assert result == expected
+
+
+def test_clean_text_null() -> None:
+    """Test pour clean_text avec valeur nulle."""
+    text = None
+    expected = ""
+    result = ingest_script.clean_text(text)
+    assert result == expected
+
+
+def test_clean_text_empty() -> None:
+    """Test pour clean_text avec chaîne vide."""
+    text = ""
+    expected = ""
+    result = ingest_script.clean_text(text)
+    assert result == expected
+
+
+def test_built_text() -> None:
+    """Test pour la fonction built_text."""
+    df = pd.DataFrame({
+        'designation': ['Produit A', 'Produit B'],
+        'description': ['Description A', 'Description B']
+    })
+    result = ingest_script.built_text(df)
+    expected = pd.Series(['produit a description a', 'produit b description b'])
+    pd.testing.assert_series_equal(result, expected)
