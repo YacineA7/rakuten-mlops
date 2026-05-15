@@ -17,14 +17,14 @@ def load_data():
     X_train = sparse.load_npz(ARTIFACTS_DIR / "X_train.npz")
     y_train = np.load(ARTIFACTS_DIR / "y_train.npy")
 
-    X_val_path = ARTIFACTS_DIR / "X_val.npz"
-    y_val_path = ARTIFACTS_DIR / "y_val.npy"
+    X_valid_path = ARTIFACTS_DIR / "X_valid.npz"
+    y_valid_path = ARTIFACTS_DIR / "y_valid.npy"
 
     # Vérifie si les fichiers de validation existent avant de les charger
-    X_val = sparse.load_npz(ARTIFACTS_DIR / "X_val.npz") if X_val_path.exists() else None
-    y_val = np.load(ARTIFACTS_DIR / "y_val.npy") if y_val_path.exists() else None
+    X_valid = sparse.load_npz(ARTIFACTS_DIR / "X_valid.npz") if X_valid_path.exists() else None
+    y_valid = np.load(ARTIFACTS_DIR / "y_valid.npy") if y_valid_path.exists() else None
 
-    return X_train, y_train, X_val, y_val
+    return X_train, y_train, X_valid, y_valid
 
 
 def build_model(num_classes: int) -> XGBClassifier: # type hint pour indiquer que la fonction retourne un objet de type XGBClassifier
@@ -46,12 +46,12 @@ def build_model(num_classes: int) -> XGBClassifier: # type hint pour indiquer qu
     return model
 
 
-def train_model(model, X_train, y_train, X_val=None, y_val=None):
-    if X_val is not None and y_val is not None:
+def train_model(model, X_train, y_train, X_valid=None, y_valid=None):
+    if X_valid is not None and y_valid is not None:
        model.fit(
            X_train,
            y_train,
-           eval_set=[(X_val, y_val)],
+           eval_set=[(X_valid, y_valid)],
            verbose=40, # Affiche les résultats tous les 40 arbres
        )
     else:
@@ -62,7 +62,7 @@ def train_model(model, X_train, y_train, X_val=None, y_val=None):
 
 def save_model(model, model_dir: Path, num_classes: int):
     """Enregistre le modèle entraîné dans le dossier spécifié"""
-    joblib.dump(model, model_dir / "xgb_model.joblib")
+    joblib.dump(model, model_dir / "xgb_model.joblib") # Enregistre le modèle dans un fichier .joblib
     # Enregistre les métadonnées du modèle dans un fichier JSON
     train_metadata = {
         "model_type": "XGBClassifier",
@@ -88,10 +88,10 @@ def save_model(model, model_dir: Path, num_classes: int):
 
 def main():
     """Fonction principale pour l'entrainement du modèle"""
-    X_train, y_train, X_val, y_val = load_data()
+    X_train, y_train, X_valid, y_valid = load_data()
     num_classes = len(np.unique(y_train)) # Détermine le nombre de classes à partir des étiquettes d'entraînement
     model = build_model(num_classes)
-    model = train_model(model, X_train, y_train, X_val, y_val)
+    model = train_model(model, X_train, y_train, X_valid, y_valid)
     
     save_model(model, MODEL_DIR, num_classes)
 
