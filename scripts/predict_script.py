@@ -31,7 +31,7 @@ warnings.filterwarnings('ignore')
 
 DATA_DIR = Path("data/raw")
 ARTIFACTS_DIR = Path("artifacts")  # Dossier contenant les artéfacts (données, encoder etc...)
-MODEL_DIR = Path("model")
+MODEL_DIR = Path("models")
 PREDICTION_DIR = Path("predictions")  # Dossier pour enregistrer les prédictions
 PREDICTION_DIR.mkdir(parents=True, exist_ok=True)  # Création du
 
@@ -44,12 +44,16 @@ MODEL_PATH = MODEL_DIR / "xgb_model.joblib"
 
 def load_test_data(X_VALID_PATH: Path) -> pd.DataFrame:
     """Charge les données de validation à partir du fichier .csv."""
-    df = pd.read_csv(X_VALID_PATH, index_col="id")
+    df = pd.read_csv(X_VALID_PATH)
 
-    if "Unnamed: 0" in df.columns:
+    if "id" in df.columns:
+        df = df.set_index("id")
+    elif "Unnamed: 0" in df.columns:
         df = df.rename(columns={"Unnamed: 0": "id"})
         df = df.set_index("id")
-
+    else:
+        raise ValueError("Le fichier de validation doit contenir une colonne 'id' ou 'Unnamed: 0' pour l'index.")
+    
     return df
 
 def clean_text(text) -> str:
@@ -209,36 +213,37 @@ def save_predictions(df_test: pd.DataFrame, y_pred_labels: np.ndarray):
 
 
 def main():
-    # 1. Charger les données de validation
+    # Charger les données de validation
     df_test = load_test_data(X_VALID_PATH)
 
-    # 2. Construire l'ensemble des stopwords
+    # Construire l'ensemble des stopwords
     stop_set = build_stopword_set()
 
-    # 3. Nettoyer le texte et construire la colonne "text"
+    # Nettoyer le texte et construire la colonne "text"
     corpus = built_text(df_test)
 
-    # 4. Supprimer les stopwords du corpus
+    # Supprimer les stopwords du corpus
     corpus_no_stop = corpus.apply(lambda x: delete_stopwords(x, stop_set))
 
-    # 5. Appliquer le stemming français sur le corpus nettoyé
+    # Appliquer le stemming français sur le corpus nettoyé
     stemmer = SnowballStemmer("french")
     corpus_stemmed = corpus_no_stop.apply(lambda x: stem_text(x, stemmer))
 
-    # 6. Charger les artéfacts nécessaires à la prédiction
+    # Charger les artéfacts nécessaires à la prédiction
     tfidf, label_encoder, model = load_prediction_artifacts()
 
-    # 7. Vectoriser le texte de validation avec le TF-IDF chargé
+    # Vectoriser le texte de validation avec le TF-IDF chargé
     X_valid_tfidf = vectorize_text(corpus_stemmed, tfidf)
 
-    # 8. Générer les prédictions encodées avec le modèle XGBoost
+    # Générer les prédictions encodées avec le modèle XGBoost
     y_pred_encoded = predict_classes(model, X_valid_tfidf)
 
-    # 9. Décoder les prédictions pour obtenir les noms de catégories
+    # Décoder les prédictions pour obtenir les noms de catégories
     y_pred_labels = decode_predictions(y_pred_encoded, label_encoder)
 
-    # 10. Enregistrer les prédictions dans un fichier CSV
+    # Enregistrer les prédictions dans un fichier CSV
     save_predictions(df_test, y_pred_labels)
 
-    if __name__ == "__main__":
-        main()
+
+if __name__ == "__main__":
+    main()

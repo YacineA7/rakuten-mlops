@@ -1,16 +1,24 @@
 from pathlib import Path
 import json
-from pyexpat import model
 import joblib
 import numpy as np
 from scipy import sparse
 from xgboost import XGBClassifier
+import warnings
+import mlflow
+import mlflow.sklearn
+from sklearn.metrics import accuracy_score, f1_score
+
+warnings.filterwarnings('ignore')
 
 
 ARTIFACTS_DIR = Path("artifacts") # Dossier contenant les artéfacts (données, encoder etc...)
-MODEL_DIR = Path("model") # Dossier où est enregistré le modèle entraîné
+MODEL_DIR = Path("models") # Dossier où est enregistré le modèle entraîné
+MLRUNS_DIR = Path("mlruns") # Dossier où MLflow stocke les expériences et les runs : contient tous les logs, métriques, modèles enregistrés par MLflow
+EXPERIMENT_NAME = "rakuten_text_xgboost" # Nom de l'expérience MLflow : tous les runs seront organisés sous ce nom d'expérience
 MODEL_DIR.mkdir(parents=True, exist_ok=True) # Création du dossier si il n'existe pas
 
+mlflow.set_experiment(EXPERIMENT_NAME) # Définit l'expérience MLflow : tous les runs seront organisés sous ce nom d'expérience
 
 def load_data():
     """Charge les données d'entraînement et de validation à partir des fichiers .npz"""
@@ -27,23 +35,29 @@ def load_data():
     return X_train, y_train, X_valid, y_valid
 
 
-def build_model(num_classes: int) -> XGBClassifier: # type hint pour indiquer que la fonction retourne un objet de type XGBClassifier
-    """Construit le modèle XGBoost avec les hyperparamètres spécifiés"""
-    model = XGBClassifier(
-        objective="multi:softprob", # Objectif pour la classification multi-classes : probabilités pour chaque classe
-        num_class=num_classes, # Nombre de classes
-        learning_rate=0.1,
-        max_depth=8, # Profondeur maximale de l'arbre : plus la profondeur est haute, plus le modele est complexe, 
-        n_estimators=600, # Nombre d'arbres
-        subsample=0.8, # Utilisation de 80% des échantillons pour chaque arbre, pour réduire le surapprentissage
-        colsample_bytree=0.8, # Utilisation de 80% des caractéristiques pour chaque arbre, pour réduire le surapprentissage
-        reg_lambda=1.0,
-        tree_method="hist", 
-        eval_metric="mlogloss", # Utilisation de la log-loss pour évaluer les performances du modèle : plus la log-loss est petite, plus le modele est performant
-        n_jobs=-1,
-        random_state=42,
-    )
-    return model
+def get_model_params(num_classes: int) -> dict:
+    """Retourne les hyperparamètres du modèle sous forme de dictionnaire, pour faciliter l'enregistrement dans MLflow."""
+    return {
+        "model_type": "XGBClassifier",
+        "objective": "multi:softprob", # Objectif pour la classification multi-classes : probabilités pour chaque classe
+        "num_class": num_classes, # Nombre de classes
+        "learning_rate": 0.1,
+        "max_depth": 8, # Profondeur maximale de l'arbre : plus la profondeur est haute, plus le modele est complexe
+        "n_estimators": 600, # Nombre d'arbres
+        "subsample": 0.8, # Utilisation de 80% des échantillons pour chaque arbre, pour réduire le surapprentissage
+        "colsample_bytree": 0.8, # Utilisation de 80% des caractéristiques pour chaque arbre, pour réduire le surapprentissage
+        "reg_lambda": 1.0, 
+        "tree_method": "hist",
+        "eval_metric": "mlogloss", # Utilisation de la log-loss pour évaluer les performances du modèle : plus la log-loss est petite, plus le modele est performant
+        "n_jobs": -1,
+        "random_state": 42,
+    }
+
+
+def build_model(params: dict) -> XGBClassifier:
+    model_params = params.copy() # Copie des paramètres pour éviter de modifier le dictionnaire original
+    model_params.pop("model_type", None) # Supprime la clé "model_type" qui n'est pas un hyperparamètre de XGBClassifier
+    return XGBClassifier(**model_params)
 
 
 def train_model(model, X_train, y_train, X_valid=None, y_valid=None):
@@ -86,14 +100,53 @@ def save_model(model, model_dir: Path, num_classes: int):
     print(f"Modèle entrainé enregistré dans {model_dir}")
 
 
+def evaluate_model(model, X_valid, y_valid):
+    """Évalue le modèle sur l'ensemble de validation et retourne les métriques."""
+    if X_valid is None or y_valid is None:
+        return None
+
+    y_pred = model.predict(X_valid)
+
+    metrics = {
+        "accuracy": float(accuracy_score(y_valid, y_pred)),
+        "f1_macro": float(f1_score(y_valid, y_pred, average="macro")),
+        "f1_weighted": float(f1_score(y_valid, y_pred, average="weighted")),
+    }
+    return metrics
+
+
+def log_to_mlflow(model, params: dict, metrics: dict | None):
+    """Enregistre les paramètres, les métriques et le modèle dans MLflow pour le suivi des expériences."""
+    mlflow.set_tracking_uri(f"file:///{MLRUNS_DIR.resolve()}")
+    mlflow.set_experiment(EXPERIMENT_NAME)
+
+    with mlflow.start_run():
+        mlflow.log_params(params)
+
+        if metrics is not None:
+            mlflow.log_metrics(metrics)
+
+        mlflow.log_artifact(str(ARTIFACTS_DIR / "ingestion_metadata.json"))
+
+        if (MODEL_DIR / "train_metadata.json").exists():
+            mlflow.log_artifact(str(MODEL_DIR / "train_metadata.json"))
+
+        mlflow.sklearn.log_model(model, artifact_path="model")
+
+
 def main():
     """Fonction principale pour l'entrainement du modèle"""
     X_train, y_train, X_valid, y_valid = load_data() # Chargement des données d'entraînement et de validation prétraitées
     num_classes = len(np.unique(y_train)) # Détermine le nombre de classes à partir des étiquettes d'entraînement
-    model = build_model(num_classes)
-    model = train_model(model, X_train, y_train, X_valid, y_valid)
+
+    params = get_model_params(num_classes) # Récupère les hyperparamètres du modèle
+    model = build_model(params) # Construit le modèle XGBoost avec les hyperparamètres spécifiés
+    model = train_model(model, X_train, y_train, X_valid, y_valid) # Entraîne le modèle sur les données d'entraînement, avec validation
     
-    save_model(model, MODEL_DIR, num_classes)
+    save_model(model, MODEL_DIR, num_classes) # Enregistre le modèle entraîné et les métadonnées d'entraînement
+
+    metrics = evaluate_model(model, X_valid, y_valid) # Évaluation du modèle sur l'ensemble de validation
+    log_to_mlflow(model, params, metrics) # Enregistrement dans MLflow
 
 if __name__ == "__main__":
     main()
