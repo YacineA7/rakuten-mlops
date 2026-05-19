@@ -8,8 +8,8 @@ nltk.download("stopwords", quiet=True)
 
 STOP_FR = set(stopwords.words("french"))
 STOP_EN = set(stopwords.words("english"))
-STOP_ALL = STOP_FR.union(STOP_EN)
-STOP_ALL.add("generique")
+STOP_SET = STOP_FR.union(STOP_EN)
+STOP_SET.add("generique")
 
 STEMMER = SnowballStemmer("french")
 
@@ -41,7 +41,7 @@ def clean_text(text) -> str:
 
 
 def remove_stopwords(text: str) -> str:
-    tokens = [w for w in text.split() if w not in STOP_ALL and len(w) > 1]
+    tokens = [w for w in text.split() if w not in STOP_SET and len(w) > 1]
     return " ".join(tokens)
 
 
