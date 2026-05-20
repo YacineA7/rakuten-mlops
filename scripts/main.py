@@ -3,19 +3,28 @@ from train_script import main as train_main
 from predict_script import main as predict_main
 from evaluate_script import main as evaluate_main
 
-def main():
-    # Step 1: Chargement et pre-processing des données
-    ingest_main()
-    
-    # Step 2: Entrainement du modele
-    train_main()
-    
-    # Step 3: Inférence et prédiction
-    predict_main()
-    
-    # Step 4: Evaluation du modele
-    evaluate_main()
 
-# Execute la fonction principale
+def main():
+    print("[MAIN] Démarrage du pipeline complet")
+
+    try:
+        print("[MAIN] Étape 1/4 - Ingestion")
+        ingest_main()
+
+        print("[MAIN] Étape 2/4 - Entraînement")
+        train_main()
+
+        print("[MAIN] Étape 3/4 - Prédiction")
+        predict_main()
+
+        print("[MAIN] Étape 4/4 - Évaluation")
+        evaluate_main()
+
+        print("[MAIN] Pipeline terminé avec succès")
+
+    except Exception as e:
+        print(f"[MAIN] Erreur pipeline : {e}")
+        raise
+
 if __name__ == "__main__":
     main()

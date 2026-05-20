@@ -39,6 +39,14 @@ def clean_text(text) -> str:
 
     return text
 
+def build_corpus(df: pd.DataFrame) -> pd.Series:
+    return df.apply(
+        lambda row: preprocess_product_text(
+            row.get("designation", ""),
+            row.get("description", "")
+        ),
+        axis=1
+    )
 
 def remove_stopwords(text: str) -> str:
     tokens = [w for w in text.split() if w not in STOP_SET and len(w) > 1]

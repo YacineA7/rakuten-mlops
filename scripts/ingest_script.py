@@ -20,11 +20,6 @@ from scipy import sparse
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from pathlib import Path
-from sklearn.pipeline import Pipeline
-from skopt import BayesSearchCV
-from skopt.space import Real
-import matplotlib.pyplot as plt
-from sklearn.metrics import ConfusionMatrixDisplay
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 import json
@@ -48,7 +43,7 @@ Y_TRAIN_PATH = DATA_DIR / "Y_train_CVw08PX.csv"
 
 # Fonction de chargement des données brutes
 
-def load_rawdata(x_path: Path, y_path: Path) -> pd.DataFrame:
+def load_raw_data(x_path: Path, y_path: Path) -> pd.DataFrame:
     """Charge les données d'entraînement et de validation à partir des fichiers CSV."""
     x_train = pd.read_csv(x_path)
     y_train = pd.read_csv(y_path)
@@ -114,7 +109,7 @@ def clean_text(text) -> str:
     return text
 
 
-def built_text(df: pd.DataFrame) -> pd.Series:
+def build_corpus(df: pd.DataFrame) -> pd.Series:
     
     """"
     Nettoyage du texte et création de la colonne "text" en concaténant les colonnes "designation" et "description" 
@@ -262,17 +257,35 @@ def save_artifacts(X_train, y_train, X_valid, y_valid, tfidf, label_encoder, art
 def main():
     print("[INGEST] script lancé")
 
-    df = load_rawdata(X_TRAIN_PATH, Y_TRAIN_PATH) # Chargement des données brutes
-    corpus = built_text(df) # Nettoyage du texte et création de la colonne "text"
-    stop_set = build_stopword_set() # Construction de l'ensemble de stopwords
-    stemmer = SnowballStemmer("french") # Initialisation du stemmer français
-    corpus_cleaned = corpus.apply(lambda x: delete_stopwords(x, stop_set)) # Suppression des stopwords
-    corpus_stemmed = corpus_cleaned.apply(lambda x: stem_text(x, stemmer)) # Application du stemming sur le texte nettoyé
-    y_enc, le = label_encoder(df["prdtypecode"]) # Encodage des labels de la variable cible
-    X_train, X_valid, y_train, y_valid = split_data(corpus_stemmed, y_enc) # Séparation des données en un ensemble d'entraînement et de validation
-    X_train_tfidf, X_valid_tfidf, tfidf = vectorize_text(X_train, X_valid) # Vectorisation du texte avec TfidfVectorizer
+    # Chargement des données brutes
+    df = load_raw_data(X_TRAIN_PATH, Y_TRAIN_PATH) 
 
-    save_artifacts( # Enregistrement des artéfacts de l'ingestion et du préprocessing
+    # Nettoyage du texte et création de la colonne "text"
+    corpus = build_corpus(df)
+
+    # Construction de l'ensemble de stopwords
+    stop_set = build_stopword_set() 
+    
+    # Initialisation du stemmer français
+    stemmer = SnowballStemmer("french") 
+    
+    # Suppression des stopwords
+    corpus_cleaned = corpus.apply(lambda x: delete_stopwords(x, stop_set)) 
+    
+    # Application du stemming sur le texte nettoyé
+    corpus_stemmed = corpus_cleaned.apply(lambda x: stem_text(x, stemmer)) 
+    
+    # Encodage des labels de la variable cible
+    y_enc, le = label_encoder(df["prdtypecode"]) 
+    
+    # Séparation des données en un ensemble d'entraînement et de validation
+    X_train, X_valid, y_train, y_valid = split_data(corpus_stemmed, y_enc)
+    
+    # Vectorisation du texte avec TfidfVectorizer
+    X_train_tfidf, X_valid_tfidf, tfidf = vectorize_text(X_train, X_valid)
+
+    # Enregistrement des artéfacts de l'ingestion et du préprocessing
+    save_artifacts(
         X_train_tfidf, y_train,
         X_valid_tfidf, y_valid,
         tfidf, le,
