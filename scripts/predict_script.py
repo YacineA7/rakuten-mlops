@@ -21,7 +21,10 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from pathlib import Path
 from sklearn.pipeline import Pipeline
-import matplotlib.pyplot as plt
+try:
+    import matplotlib.pyplot as plt
+except Exception:
+    plt = None
 from sklearn.metrics import ConfusionMatrixDisplay
 from nltk.corpus import stopwords
 from nltk.stem import SnowballStemmer

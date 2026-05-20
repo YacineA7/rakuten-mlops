@@ -1,4 +1,4 @@
-"""
+﻿"""
 Script d'ingestion des rawdata qui sera conforme à PEP8.
 
 Ce module illustre une structure claire :
@@ -24,7 +24,10 @@ from pathlib import Path
 from sklearn.pipeline import Pipeline
 from skopt import BayesSearchCV
 from skopt.space import Real
-import matplotlib.pyplot as plt
+try:
+    import matplotlib.pyplot as plt
+except Exception:
+    plt = None
 from sklearn.metrics import ConfusionMatrixDisplay
 from sklearn.feature_extraction.text import TfidfVectorizer
 
