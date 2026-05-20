@@ -10,8 +10,10 @@ streamlit == 1.54.0
 opencv-python == 4.13.0.92
 pillow == 11.1.0
 xgboost == 3.1.1
+joblib
+nltk
 scikit-optimize
-tensorflow 
-keras
 grad-cam
 lime
+dvc
+mlflow

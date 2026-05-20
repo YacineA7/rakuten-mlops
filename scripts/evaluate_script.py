@@ -10,7 +10,7 @@ from sklearn.metrics import accuracy_score, f1_score, classification_report, con
 
 
 ARTIFACTS_DIR = Path("artifacts")
-MODEL_DIR = Path("model")
+MODEL_DIR = Path("models")
 REPORTS_DIR = Path("reports")
 REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -55,7 +55,7 @@ def predict_validation(model, X_valid):
     return y_pred
 
 
-def compute_metrics(y_valid, y_pred):
+def evaluate_model(y_valid, y_pred):
     """
     Calcule les métriques principales utilisées dans le projet :
     - accuracy
@@ -155,17 +155,22 @@ def main():
     print("[EVAL] Démarrage de l'évaluation")
     print("=" * 60)
 
-    # 1. Chargement
-    X_valid, y_valid, model, label_encoder = load_evaluation_artifacts()
-    # 2. Prédictions
+    # Chargement
+    X_valid, y_valid, model, label_encoder = load_eval_artifacts()
+
+    # Prédictions
     y_pred = predict_validation(model, X_valid)
-    # 3. Métriques globales
-    metrics = compute_metrics(y_valid, y_pred)
-    # 4. Rapport détaillé par classe
+
+    # Métriques globales
+    metrics = evaluate_model(y_valid, y_pred)
+
+    # Rapport détaillé par classe
     report = build_classification_report(y_valid, y_pred, label_encoder)
-    # 5. Matrice de confusion
+
+    # Matrice de confusion
     cm_df = build_confusion_matrix(y_valid, y_pred, label_encoder)
-    # 6. Sauvegarde
+
+    # Sauvegarde
     save_evaluation_outputs(metrics, report, cm_df)
 
     print("=" * 60)

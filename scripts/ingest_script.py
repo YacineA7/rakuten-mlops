@@ -14,7 +14,6 @@ Ce module illustre une structure claire :
 """
 
 
-import nltk
 import pandas as pd
 import numpy as np
 from scipy import sparse
@@ -44,6 +43,7 @@ warnings.filterwarnings('ignore')
 
 DATA_DIR = Path("data/raw")
 ARTIFACTS_DIR = Path("artifacts")  # Dossier contenant les artéfacts (données, encoder etc...)
+ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
 
 X_TRAIN_PATH = DATA_DIR / "X_train_update.csv"
 Y_TRAIN_PATH = DATA_DIR / "Y_train_CVw08PX.csv"
@@ -222,6 +222,8 @@ def save_artifacts(X_train, y_train, X_valid, y_valid, tfidf, label_encoder, art
     - TfidfVectorizer pour la vectorisation 
     - LabelEncoder pour l'encodage  des labels
     """
+    print("[INGEST] save_artifacts appelé")
+
     sparse.save_npz(artifacts_dir / "X_train.npz", X_train) # Enregistre la matrice TF-IDF d'entraînement
     np.save(artifacts_dir / "y_train.npy", y_train) # Enregistre les labels encodés d'entraînement
 
@@ -260,23 +262,25 @@ def save_artifacts(X_train, y_train, X_valid, y_valid, tfidf, label_encoder, art
 
 
 
-    def main():
-        df = load_rawdata(X_TRAIN_PATH, Y_TRAIN_PATH) # Chargement des données brutes
-        corpus = built_text(df) # Nettoyage du texte et création de la colonne "text"
-        stop_set = build_stopword_set() # Construction de l'ensemble de stopwords
-        stemmer = SnowballStemmer("french") # Initialisation du stemmer français
-        corpus_cleaned = corpus.apply(lambda x: delete_stopwords(x, stop_set)) # Suppression des stopwords
-        corpus_stemmed = corpus_cleaned.apply(lambda x: stem_text(x, stemmer)) # Application du stemming sur le texte nettoyé
-        y_enc, le = label_encoder(df["prdtypecode"]) # Encodage des labels de la variable cible
-        X_train, X_valid, y_train, y_valid = split_data(corpus_stemmed, y_enc) # Séparation des données en un ensemble d'entraînement et de validation
-        X_train_tfidf, X_valid_tfidf, tfidf = vectorize_text(X_train, X_valid) # Vectorisation du texte avec TfidfVectorizer
+def main():
+    print("[INGEST] script lancé")
 
-        save_artifacts( # Enregistrement des artéfacts de l'ingestion et du préprocessing
-            X_train_tfidf, y_train,
-            X_valid_tfidf, y_valid,
-            tfidf, le,
-            ARTIFACTS_DIR 
-        )
+    df = load_rawdata(X_TRAIN_PATH, Y_TRAIN_PATH) # Chargement des données brutes
+    corpus = built_text(df) # Nettoyage du texte et création de la colonne "text"
+    stop_set = build_stopword_set() # Construction de l'ensemble de stopwords
+    stemmer = SnowballStemmer("french") # Initialisation du stemmer français
+    corpus_cleaned = corpus.apply(lambda x: delete_stopwords(x, stop_set)) # Suppression des stopwords
+    corpus_stemmed = corpus_cleaned.apply(lambda x: stem_text(x, stemmer)) # Application du stemming sur le texte nettoyé
+    y_enc, le = label_encoder(df["prdtypecode"]) # Encodage des labels de la variable cible
+    X_train, X_valid, y_train, y_valid = split_data(corpus_stemmed, y_enc) # Séparation des données en un ensemble d'entraînement et de validation
+    X_train_tfidf, X_valid_tfidf, tfidf = vectorize_text(X_train, X_valid) # Vectorisation du texte avec TfidfVectorizer
 
-    if __name__ == "__main__":
-        main()
+    save_artifacts( # Enregistrement des artéfacts de l'ingestion et du préprocessing
+        X_train_tfidf, y_train,
+        X_valid_tfidf, y_valid,
+        tfidf, le,
+        ARTIFACTS_DIR 
+    )
+
+if __name__ == "__main__":
+    main()
