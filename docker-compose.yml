@@ -1,0 +1,80 @@
+version: "3.9"
+
+services:
+  mlflow:
+    image: python:3.11-slim
+    container_name: rakuten-mlflow
+    working_dir: /app
+    volumes:
+      - ./:/app
+      - ./mlruns:/app/mlruns
+    command: >
+      sh -c "pip install --no-cache-dir mlflow &&
+             mlflow ui --backend-store-uri file:///app/mlruns --host 0.0.0.0 --port 5000"
+    ports:
+      - "5000:5000"
+
+  ingest:
+    build: .
+    container_name: rakuten-ingest
+    working_dir: /app
+    volumes:
+      - ./:/app
+      - ./data:/app/data
+      - ./artifacts:/app/artifacts
+    command: python ingest_script.py
+
+  train:
+    build: .
+    container_name: rakuten-train
+    working_dir: /app
+    volumes:
+      - ./:/app
+      - ./artifacts:/app/artifacts
+      - ./models:/app/models
+      - ./mlruns:/app/mlruns
+    depends_on:
+      - ingest
+      - mlflow
+    command: python train_script.py
+
+  predict:
+    build: .
+    container_name: rakuten-predict
+    working_dir: /app
+    volumes:
+      - ./:/app
+      - ./data:/app/data
+      - ./artifacts:/app/artifacts
+      - ./models:/app/models
+      - ./predictions:/app/predictions
+    depends_on:
+      - train
+    command: python predict_script.py
+
+  evaluate:
+    build: .
+    container_name: rakuten-evaluate
+    working_dir: /app
+    volumes:
+      - ./:/app
+      - ./artifacts:/app/artifacts
+      - ./models:/app/models
+      - ./reports:/app/reports
+    depends_on:
+      - train
+    command: python evaluate_script.py
+
+  api:
+    build: .
+    container_name: rakuten-api
+    working_dir: /app
+    volumes:
+      - ./:/app
+      - ./artifacts:/app/artifacts
+      - ./models:/app/models
+    depends_on:
+      - train
+    ports:
+      - "8000:8000"
+    command: uvicorn api_main:app --host 0.0.0.0 --port 8000
