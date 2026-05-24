@@ -1,4 +1,4 @@
-"""
+﻿"""
 Script d'ingestion des rawdata qui sera conforme à PEP8.
 
 Ce module illustre une structure claire :
@@ -21,6 +21,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from pathlib import Path
 from sklearn.feature_extraction.text import TfidfVectorizer
+import matplotlib.pyplot as plt
 
 import json
 import joblib
@@ -194,7 +195,7 @@ def vectorize_text(X_train: pd.Series, X_valid: pd.Series) -> tuple:
     """
     # Initialisation de TfidfVectorizer avec des paramètres pour limiter le nombre de features et les n-grams
     tfidf = TfidfVectorizer(
-        max_features=50000,
+        max_features=50,
         ngram_range=(1, 2),
         min_df=2,
         max_df=0.95
