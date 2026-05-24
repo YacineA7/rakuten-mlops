@@ -195,7 +195,7 @@ def vectorize_text(X_train: pd.Series, X_valid: pd.Series) -> tuple:
     """
     # Initialisation de TfidfVectorizer avec des paramètres pour limiter le nombre de features et les n-grams
     tfidf = TfidfVectorizer(
-        max_features=50,
+        max_features=50, # Limite le nombre de features à 50 avec TF-IDF pour un entraînement plus rapide
         ngram_range=(1, 2),
         min_df=2,
         max_df=0.95
