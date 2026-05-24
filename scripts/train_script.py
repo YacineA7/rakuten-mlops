@@ -1,12 +1,15 @@
 from pathlib import Path
 import json
 import joblib
+from mlflow import client
 import numpy as np
 from scipy import sparse
 from xgboost import XGBClassifier
 import warnings
 import mlflow
 import mlflow.sklearn
+import os
+from mlflow import MlflowClient, active_run, run
 from sklearn.metrics import accuracy_score, f1_score
 
 warnings.filterwarnings('ignore')
@@ -117,10 +120,12 @@ def evaluate_model(model, X_valid, y_valid):
 
 def log_to_mlflow(model, params: dict, metrics: dict | None):
     """Enregistre les paramètres, les métriques et le modèle dans MLflow pour le suivi des expériences."""
-    mlflow.set_tracking_uri(f"file:///{MLRUNS_DIR.resolve()}")
+    tracking_uri = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")
+    mlflow.set_tracking_uri(tracking_uri)
     mlflow.set_experiment(EXPERIMENT_NAME)
+    MODEL_NAME = "xgboost_text_tfidf"
 
-    with mlflow.start_run():
+    with mlflow.start_run(run_name="xgboost_text_training") as active_run:
         mlflow.log_params(params)
 
         if metrics is not None:
@@ -131,7 +136,56 @@ def log_to_mlflow(model, params: dict, metrics: dict | None):
         if (MODEL_DIR / "train_metadata.json").exists():
             mlflow.log_artifact(str(MODEL_DIR / "train_metadata.json"))
 
-        mlflow.sklearn.log_model(model, artifact_path="model")
+        mlflow.sklearn.log_model(model, name="xgb_model", registered_model_name=MODEL_NAME) # Enregistre le modèle dans MLflow et l'enregistre aussi dans le registre de modèles MLflow sous le nom spécifié
+
+        run_id = active_run.info.run_id # Récupère l'ID du run pour pouvoir le référencer dans l'API
+        
+    client = MlflowClient(tracking_uri=tracking_uri)
+
+    latest_versions = client.search_model_versions(
+        filter_string=f"name = '{MODEL_NAME}'"
+    )
+
+    if not latest_versions:
+        raise RuntimeError(f"Aucune version trouvée pour {MODEL_NAME}")
+    
+    latest_version = max(int(v.version) for v in latest_versions) # Détermine le numéro de version à attribuer au modèle
+    
+    client.set_model_version_tag(
+        name=MODEL_NAME,
+        version=str(latest_version),
+        key="Status",
+        value="Test"
+    )
+
+    if metrics is not None:
+        client.set_model_version_tag(
+            name=MODEL_NAME,
+            version=str(latest_version),
+            key="accuracy",
+            value=str(metrics["accuracy"])
+        )
+        client.set_model_version_tag(
+            name=MODEL_NAME,
+            version=str(latest_version),
+            key="f1_macro",
+            value=str(metrics["f1_macro"])
+        )
+        client.set_model_version_tag(
+            name=MODEL_NAME,
+            version=str(latest_version),
+            key="f1_weighted",
+            value=str(metrics["f1_weighted"])
+        )
+    
+    client.set_model_version_tag( 
+        name=MODEL_NAME,
+        version=str(latest_version),
+        key="run_id", # C'est le run_id qui va nous permettre de trouver le modele en prod
+        value=run_id 
+    )
+
+    print(f"Modèle enregistré dans MLflow Registry avec run_id : {run_id} et version : {latest_version}")
 
 
 def main():

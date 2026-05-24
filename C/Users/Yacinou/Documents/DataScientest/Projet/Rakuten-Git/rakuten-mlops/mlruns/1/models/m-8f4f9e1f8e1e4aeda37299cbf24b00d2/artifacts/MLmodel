@@ -1,0 +1,23 @@
+artifact_path: file:C:/Users/Yacinou/Documents/DataScientest/Projet/Rakuten-Git/rakuten-mlops/mlruns/1/models/m-8f4f9e1f8e1e4aeda37299cbf24b00d2/artifacts
+flavors:
+  python_function:
+    env:
+      conda: conda.yaml
+      virtualenv: python_env.yaml
+    loader_module: mlflow.sklearn
+    model_path: model.pkl
+    predict_fn: predict
+    python_version: 3.11.15
+  sklearn:
+    code: null
+    pickled_model: model.pkl
+    serialization_format: cloudpickle
+    sklearn_version: 1.8.0
+    skops_trusted_types: null
+mlflow_version: 3.12.0
+model_id: m-8f4f9e1f8e1e4aeda37299cbf24b00d2
+model_size_bytes: 43757755
+model_uuid: m-8f4f9e1f8e1e4aeda37299cbf24b00d2
+prompts: null
+run_id: e8b188a4e56140cfb477665a5710dfd5
+utc_time_created: '2026-05-24 02:53:33.323683'
