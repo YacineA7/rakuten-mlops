@@ -1,0 +1,110 @@
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Packaging / build
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Test / coverage / lint
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# =========================
+# Project generated files
+# =========================
+artifacts/
+models/
+mlruns/
+reports/
+predictions/
+
+# Data files generated locally
+data/interim/
+data/processed/
+
+# Optional: raw data if not meant to be versioned
+# data/raw/
+
+# Logs
+logs/
+*.log
+
+# =========================
+# MLflow / local DB
+# =========================
+mlflow.db
+*.db
+*.sqlite
+*.sqlite3
+
+# =========================
+# Airflow
+# =========================
+airflow/logs/
+airflow/plugins/__pycache__/
+airflow/.env
+airflow/airflow.cfg
+airflow/standalone_admin_password.txt
+
+# If you create a local airflow home
+.airflow/
+dags/__pycache__/
+
+# =========================
+# Docker / local secrets
+# =========================
+.env
+.env.*
+!.env.example
+
+gateway/.htpasswd
+*.pem
+*.key
+secrets/
+docker-data/
+
+# =========================
+# NLTK / cache / temp
+# =========================
+nltk_data/
+.cache/
+tmp/
+temp/
+
+# =========================
+# OS / misc
+# =========================
+*.tmp
+*.bak
+*.old
