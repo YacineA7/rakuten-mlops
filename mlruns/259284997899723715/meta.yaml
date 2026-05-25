@@ -1,8 +1,0 @@
-artifact_location: file:///C:\Users\Yacinou\Documents\DataScientest\Projet\Rakuten-Git\rakuten-mlops\mlruns/259284997899723715
-creation_time: 1779233111636
-experiment_id: '259284997899723715'
-last_update_time: 1779233111636
-lifecycle_stage: active
-name: rakuten_text_xgboost
-trace_location: null
-workspace: default
