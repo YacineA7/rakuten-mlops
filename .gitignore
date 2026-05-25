@@ -6,13 +6,13 @@ __pycache__/
 *$py.class
 *.so
 
-# Virtual environments
+# Environnements virtuels
 .venv/
 venv/
 env/
 ENV/
 
-# IDE / Editor
+# IDE / Editeurs
 .vscode/
 .idea/
 *.swp
@@ -20,9 +20,7 @@ ENV/
 .DS_Store
 Thumbs.db
 
-# =========================
 # Fichiers générés par MLflow et artéfacts
-# =========================
 artifacts/
 models/
 mlruns/
@@ -33,6 +31,7 @@ predictions/
 data/interim/
 data/processed/
 
+# Fichiers de données brutes
 data/raw/
 
 # MLRuns
@@ -42,17 +41,13 @@ C/
 logs/
 *.log
 
-# =========================
 # MLflow / local DB
-# =========================
 mlflow.db
 *.db
 *.sqlite
 *.sqlite3
 
-# =========================
 # Airflow
-# =========================
 airflow/logs/
 airflow/plugins/__pycache__/
 airflow/.env
@@ -62,9 +57,7 @@ airflow/standalone_admin_password.txt
 .airflow/
 dags/__pycache__/
 
-# =========================
 # Docker / local secrets
-# =========================
 .env
 .env.*
 !.env.example
@@ -75,17 +68,8 @@ gateway/.htpasswd
 secrets/
 docker-data/
 
-# =========================
 # NLTK / cache / temp
-# =========================
 nltk_data/
 .cache/
 tmp/
 temp/
-
-# =========================
-# OS / misc
-# =========================
-*.tmp
-*.bak
-*.old
