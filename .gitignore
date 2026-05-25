@@ -12,26 +12,6 @@ venv/
 env/
 ENV/
 
-# Packaging / build
-build/
-dist/
-*.egg-info/
-.eggs/
-pip-wheel-metadata/
-
-# Test / coverage / lint
-.pytest_cache/
-.coverage
-.coverage.*
-htmlcov/
-.mypy_cache/
-.ruff_cache/
-.tox/
-.nox/
-
-# Jupyter
-.ipynb_checkpoints/
-
 # IDE / Editor
 .vscode/
 .idea/
@@ -41,7 +21,7 @@ htmlcov/
 Thumbs.db
 
 # =========================
-# Project generated files
+# Fichiers générés par MLflow et artéfacts
 # =========================
 artifacts/
 models/
@@ -49,12 +29,14 @@ mlruns/
 reports/
 predictions/
 
-# Data files generated locally
+# Fichier de données généré par le script d'entraînement
 data/interim/
 data/processed/
 
-# Optional: raw data if not meant to be versioned
-# data/raw/
+data/raw/
+
+# MLRuns
+C/
 
 # Logs
 logs/
@@ -77,7 +59,6 @@ airflow/.env
 airflow/airflow.cfg
 airflow/standalone_admin_password.txt
 
-# If you create a local airflow home
 .airflow/
 dags/__pycache__/
 
