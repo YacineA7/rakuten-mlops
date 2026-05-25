@@ -1,7 +1,6 @@
 from pathlib import Path
 import json
 import joblib
-from mlflow import client
 import numpy as np
 from scipy import sparse
 from xgboost import XGBClassifier
@@ -9,7 +8,6 @@ import warnings
 import mlflow
 import mlflow.sklearn
 import os
-from mlflow import MlflowClient, active_run, run
 from sklearn.metrics import accuracy_score, f1_score
 
 warnings.filterwarnings('ignore')
@@ -154,8 +152,8 @@ def log_to_mlflow(model, params: dict, metrics: dict | None):
     client.set_model_version_tag(
         name=MODEL_NAME,
         version=str(latest_version),
-        key="Status",
-        value="Test"
+        key="status",
+        value="test"
     )
 
     if metrics is not None:

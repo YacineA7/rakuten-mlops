@@ -1,0 +1,2 @@
+model_name: xgboost_text_tfidf
+model_version: '9'

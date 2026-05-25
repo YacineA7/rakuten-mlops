@@ -13,3 +13,7 @@ docker
 fastapi
 uvicorn
 pydantic
+python-nginx
+apache-airflow
+prometheus-client
+grafana-client

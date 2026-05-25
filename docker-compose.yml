@@ -6,12 +6,13 @@ services:
     container_name: rakuten-mlflow
     working_dir: /app
     volumes:
-    - ./:/app
-    - ./mlruns:/app/mlruns
+      - ./:/app
+      - ./mlruns:/app/mlruns
     ports:
-    - "5000:5000"
+      - "5000:5000"
     environment:
       MLFLOW_SERVER_ALLOWED_HOSTS: "mlflow:5000,localhost:5000,127.0.0.1:5000,localhost,127.0.0.1"
+    restart: unless-stopped
     command: >
       sh -c "mlflow server
       --backend-store-uri sqlite:///mlflow.db
@@ -75,6 +76,17 @@ services:
       - ./reports:/app/reports
     command: python scripts/evaluate_script.py
 
+  gateway:
+    image: nginx:1.27-alpine
+    container_name: rakuten-gateway
+    depends_on:
+      - api
+    ports:
+      - "8080:80"
+    volumes:
+      - ./gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./gateway/.htpasswd:/etc/nginx/.htpasswd:ro
+
   api:
     build:
       context: .
@@ -87,6 +99,8 @@ services:
       - ./models:/app/models
     environment:
       MLFLOW_TRACKING_URI: http://mlflow:5000
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
+    depends_on:
+      - mlflow
     command: uvicorn api.main:app --host 0.0.0.0 --port 8000
