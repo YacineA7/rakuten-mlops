@@ -1,15 +1,22 @@
+"""Script d'entraînement du modèle XGBoost pour la classification de texte.
+Ce script charge les données prétraitées, construit et entraîne un modèle XGBoost."""
+
 from pathlib import Path
 import json
 import joblib
 import numpy as np
 from scipy import sparse
-from xgboost import XGBClassifier
-import warnings
-import mlflow
-import mlflow.sklearn
-import os
 from sklearn.metrics import accuracy_score, f1_score
 
+from xgboost import XGBClassifier
+
+import mlflow
+import mlflow.sklearn
+from mlflow import MlflowClient
+
+import os
+
+import warnings
 warnings.filterwarnings('ignore')
 
 
@@ -22,7 +29,9 @@ MODEL_DIR.mkdir(parents=True, exist_ok=True) # Création du dossier si il n'exis
 mlflow.set_experiment(EXPERIMENT_NAME) # Définit l'expérience MLflow : tous les runs seront organisés sous ce nom d'expérience
 
 def load_data():
-    """Charge les données d'entraînement et de validation à partir des fichiers .npz"""
+    """
+    Charge les données d'entraînement et de validation à partir des fichiers .npz
+    """
     X_train = sparse.load_npz(ARTIFACTS_DIR / "X_train.npz")
     y_train = np.load(ARTIFACTS_DIR / "y_train.npy")
 
@@ -37,7 +46,9 @@ def load_data():
 
 
 def get_model_params(num_classes: int) -> dict:
-    """Retourne les hyperparamètres du modèle sous forme de dictionnaire, pour faciliter l'enregistrement dans MLflow."""
+    """
+    Retourne les hyperparamètres du modèle sous forme de dictionnaire, pour faciliter l'enregistrement dans MLflow.
+    """
     return {
         "model_type": "XGBClassifier",
         "objective": "multi:softprob", # Objectif pour la classification multi-classes : probabilités pour chaque classe
@@ -56,12 +67,19 @@ def get_model_params(num_classes: int) -> dict:
 
 
 def build_model(params: dict) -> XGBClassifier:
+    """
+    Construit le modèle XGBoost avec les hyperparamètres spécifiés dans le dictionnaire params.
+    """
     model_params = params.copy() # Copie des paramètres pour éviter de modifier le dictionnaire original
     model_params.pop("model_type", None) # Supprime la clé "model_type" qui n'est pas un hyperparamètre de XGBClassifier
     return XGBClassifier(**model_params)
 
 
 def train_model(model, X_train, y_train, X_valid=None, y_valid=None):
+    """
+    Entraîne le modèle sur les données d'entraînement.
+    """
+    print("[TRAIN] Entraînement du modèle XGBoost en cours...")
     if X_valid is not None and y_valid is not None:
        model.fit(
            X_train,
@@ -72,11 +90,14 @@ def train_model(model, X_train, y_train, X_valid=None, y_valid=None):
     else:
         model.fit(X_train, y_train)
     
+    print("[TRAIN] Entraînement du modèle XGBoost terminé.")
     return model
 
 
 def save_model(model, model_dir: Path, num_classes: int):
-    """Enregistre le modèle entraîné dans le dossier spécifié"""
+    """
+    Enregistre le modèle entraîné dans le dossier spécifié.
+    """
     joblib.dump(model, model_dir / "xgb_model.joblib") # Enregistre le modèle dans un fichier .joblib
     # Enregistre les métadonnées du modèle dans un fichier JSON
     train_metadata = {
@@ -98,12 +119,16 @@ def save_model(model, model_dir: Path, num_classes: int):
     with open(model_dir / "train_metadata.json", "w") as f:
         json.dump(train_metadata, f)
 
-    print(f"Modèle entrainé enregistré dans {model_dir}")
+    print(f"[TRAIN] Modèle entraîné enregistré dans {model_dir / 'xgb_model.joblib'}")
+    print(f"[TRAIN] Métadonnées d'entraînement enregistrées dans {model_dir / 'train_metadata.json'}")
 
 
 def evaluate_model(model, X_valid, y_valid):
-    """Évalue le modèle sur l'ensemble de validation et retourne les métriques."""
+    """
+    Évalue le modèle sur l'ensemble de validation et retourne les métriques.
+    """
     if X_valid is None or y_valid is None:
+        print("[TRAIN] Pas de données de validation disponibles.")
         return None
 
     y_pred = model.predict(X_valid)
@@ -117,11 +142,18 @@ def evaluate_model(model, X_valid, y_valid):
 
 
 def log_to_mlflow(model, params: dict, metrics: dict | None):
-    """Enregistre les paramètres, les métriques et le modèle dans MLflow pour le suivi des expériences."""
+    """
+    Enregistre les paramètres, les métriques et le modèle dans MLflow pour le suivi des expériences.
+    """
     tracking_uri = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")
     mlflow.set_tracking_uri(tracking_uri)
     mlflow.set_experiment(EXPERIMENT_NAME)
     MODEL_NAME = "xgboost_text_tfidf"
+
+    print("[TRAIN][MLFLOW] Enregistrement du modèle et des métriques dans MLflow...")
+    print(f"[TRAIN][MLFLOW] Tracking URI : {tracking_uri}")
+    print(f"[TRAIN][MLFLOW] Experiment Name : {EXPERIMENT_NAME}")
+    print(f"[TRAIN][MLFLOW] Model Name : {MODEL_NAME}")
 
     with mlflow.start_run(run_name="xgboost_text_training") as active_run:
         mlflow.log_params(params)
@@ -129,10 +161,16 @@ def log_to_mlflow(model, params: dict, metrics: dict | None):
         if metrics is not None:
             mlflow.log_metrics(metrics)
 
-        mlflow.log_artifact(str(ARTIFACTS_DIR / "ingestion_metadata.json"))
+        ingest_metadata_path = ARTIFACTS_DIR / "ingestion_metadata.json"
+        if ingest_metadata_path.exists():
+            mlflow.log_artifact(str(ingest_metadata_path))
+            print(f"[TRAIN][MLFLOW] Artefact loggé : {ingest_metadata_path}")
 
-        if (MODEL_DIR / "train_metadata.json").exists():
-            mlflow.log_artifact(str(MODEL_DIR / "train_metadata.json"))
+
+        train_metadata_path = MODEL_DIR / "train_metadata.json"
+        if train_metadata_path.exists():
+            mlflow.log_artifact(str(train_metadata_path))
+            print(f"[TRAIN][MLFLOW] Artefact loggé : {train_metadata_path}")
 
         mlflow.sklearn.log_model(model, name="xgb_model", registered_model_name=MODEL_NAME) # Enregistre le modèle dans MLflow et l'enregistre aussi dans le registre de modèles MLflow sous le nom spécifié
 
@@ -183,22 +221,44 @@ def log_to_mlflow(model, params: dict, metrics: dict | None):
         value=run_id 
     )
 
-    print(f"Modèle enregistré dans MLflow Registry avec run_id : {run_id} et version : {latest_version}")
+
+    print(f"[TRAIN][MLFLOW] Modèle enregistré dans MLflow Registry avec run_id : {run_id}, version : {latest_version} et statut : test")
+    print("[TRAIN][MLFLOW] Enregistrement dans MLflow terminé.")
 
 
 def main():
-    """Fonction principale pour l'entrainement du modèle"""
+    """
+    Fonction principale pour l'entrainement du modèle
+    """
+    print("[TRAIN] Démarrage de l'entraînement")
+
     X_train, y_train, X_valid, y_valid = load_data() # Chargement des données d'entraînement et de validation prétraitées
+    print(f"[TRAIN] X_train shape : {X_train.shape}")
+    print(f"[TRAIN] y_train shape : {y_train.shape}")
+
     num_classes = len(np.unique(y_train)) # Détermine le nombre de classes à partir des étiquettes d'entraînement
+    print(f"[TRAIN] Nombre de classes : {num_classes}")
 
     params = get_model_params(num_classes) # Récupère les hyperparamètres du modèle
+    print(f"[TRAIN] Hyperparamètres : {params}")
+
     model = build_model(params) # Construit le modèle XGBoost avec les hyperparamètres spécifiés
+    print("[TRAIN] Modèle XGBoost initialisé")
+
     model = train_model(model, X_train, y_train, X_valid, y_valid) # Entraîne le modèle sur les données d'entraînement, avec validation
     
     save_model(model, MODEL_DIR, num_classes) # Enregistre le modèle entraîné et les métadonnées d'entraînement
 
     metrics = evaluate_model(model, X_valid, y_valid) # Évaluation du modèle sur l'ensemble de validation
+    if metrics is not None:
+        print(f"[TRAIN] Accuracy    : {metrics['accuracy']:.6f}")
+        print(f"[TRAIN] F1 macro    : {metrics['f1_macro']:.6f}")
+        print(f"[TRAIN] F1 weighted : {metrics['f1_weighted']:.6f}")
+
     log_to_mlflow(model, params, metrics) # Enregistrement dans MLflow
+
+    print("[TRAIN] Entraînement terminé avec succès")
+
 
 if __name__ == "__main__":
     main()

@@ -30,7 +30,9 @@ services:
       - ./:/app
       - ./data:/app/data
       - ./artifacts:/app/artifacts
-    command: python scripts/ingest_script.py
+    environment:
+      PYTHONPATH: /app
+    command: python -m scripts.ingest_script
 
   train:
     build:
@@ -45,9 +47,10 @@ services:
       - ./mlruns:/app/mlruns
     environment:
       MLFLOW_TRACKING_URI: http://mlflow:5000
+      PYTHONPATH: /app
     depends_on:
       - mlflow
-    command: python scripts/train_script.py
+    command: python -m scripts.train_script
 
   predict:
     build:
@@ -61,7 +64,9 @@ services:
       - ./artifacts:/app/artifacts
       - ./models:/app/models
       - ./predictions:/app/predictions
-    command: python scripts/predict_script.py
+    environment:
+      PYTHONPATH: /app
+    command: python -m scripts.predict_script
 
   evaluate:
     build:
@@ -74,7 +79,9 @@ services:
       - ./artifacts:/app/artifacts
       - ./models:/app/models
       - ./reports:/app/reports
-    command: python scripts/evaluate_script.py
+    environment:
+      PYTHONPATH: /app
+    command: python -m scripts.evaluate_script
 
   gateway:
     image: nginx:1.27-alpine
@@ -104,3 +111,93 @@ services:
     depends_on:
       - mlflow
     command: uvicorn api.main:app --host 0.0.0.0 --port 8000
+  
+  airflow-postgres:
+    image: postgres:16
+    container_name: airflow-postgres
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - airflow-postgres-db-volume:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  x-airflow-common: &airflow-common
+    image: apache/airflow:2.10.2
+    working_dir: /opt/airflow
+    environment: &airflow-common-env
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "True"
+      AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "False"
+      AIRFLOW_UID: 50000
+    volumes:
+      - ./:/opt/airflow/project
+      - ./dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./airflow/config:/opt/airflow/config
+    user: "${AIRFLOW_UID:-50000}:0"
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+
+  airflow-init:
+    <<: *airflow-common
+    container_name: airflow-init
+    entrypoint: /bin/bash
+    command: >
+      -c "
+      airflow db migrate &&
+      airflow users create
+      --username admin
+      --password admin
+      --firstname Rakuten
+      --lastname Admin
+      --role Admin
+      --email admin@rakuten.local
+      "
+    restart: "no"
+
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: airflow-webserver
+    command: webserver
+    ports:
+      - "8081:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: airflow-scheduler
+    command: scheduler
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: rakuten-prometheus
+    depends_on:
+      - api
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+    restart: unless-stopped
+
+
+volumes:
+  airflow-postgres-db-volume:
+

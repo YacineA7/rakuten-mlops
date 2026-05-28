@@ -1,16 +1,8 @@
 ﻿"""
-Script d'ingestion des rawdata qui sera conforme à PEP8.
-
-Ce module illustre une structure claire :
-- imports des rawdatas
-- Préparation du text avant son nettoyyage 
-- Etape de nettoyage du set 
-- Ensuite vient l'assemblage de deux colonnes  de texte 
-- Supprission des stopwords (EN & FR )
-- Encodage de l'ensemble du set 
-- Véctorisation du steeming avec TF-IDF 
-- Ajouter étape de la sauvegarde de l'ensembledes fonctions 
-- Faire appel à la fonction main à la toute fin 
+Script d'ingestion des rawdata et du preprocessing.
+Ce script charge les données brutes, applique le nettoyage et le prétraitement du texte, 
+vectorise le texte avec TfidfVectorizer, encode les labels de la variable cible, 
+et enregistre tous les artéfacts nécessaires pour l'entraînement du modèle dans le dossier "artifacts".
 """
 
 
@@ -21,16 +13,13 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from pathlib import Path
 from sklearn.feature_extraction.text import TfidfVectorizer
-import matplotlib.pyplot as plt
 
 import json
 import joblib
-import os
 import warnings
-import re
-import nltk
-from nltk.corpus import stopwords
-from nltk.stem import SnowballStemmer
+import os
+
+from utils.preprocessing import build_corpus
 
 warnings.filterwarnings('ignore')
 
@@ -62,105 +51,6 @@ def load_raw_data(x_path: Path, y_path: Path) -> pd.DataFrame:
     return raw_data
 
 
-# Le reste du module est temporairement désactivé pour permettre l'importation
-# et l'exécution des tests unitaires sur load_rawdata.
-# Ajoutez ici vos fonctions de nettoyage de texte et le pipeline lorsque le module
-# sera stabilisé.
-
-
-def clean_text(text) -> str:
-    """
-    Nettoyage de base des raw_data  : suppression des balises HTML, des URLs, conversion en minuscules, suppression de la ponctuation et des chiffres.
-    """
-    if pd.isnull(text):
-        return ""
-
-    # Suppression des balises HTML
-    text = re.sub(r'<.*?>', '', text)
-
-    # Remplacement des <br /> par un espace
-    text = text.replace(r'<br />', ' ')
-
-    # Remplacement des référence de caractère HTML
-    text = text.replace(r'&amp;', '&')
-    text = text.replace(r'&nbsp;', ' ')
-    text = text.replace(r'&lt', '<')
-    text = text.replace(r'&gt', '>')
-    text = text.replace(r'&quot', '"')
-    text = text.replace(r'&#39', "'")
-    text = text.replace(r'&eacute', 'e')
-    text = text.replace(r'&egrave', 'e')
-    text = text.replace(r'&ecirc', 'e')
-
-    # Suppression des URLs et des liens  
-    text = re.sub(r"http\S+|www\.\S+", " ", text)
-
-    # Conversion en minuscules
-    text = text.lower()
-
-    # Suppression de la ponctuation
-    text = re.sub(r'[^\w\s]', '', text)
-
-    # Suppression des chiffres
-    text = re.sub(r'\d+', '', text)
-
-    # Normalisation des espaces après nettoyage
-    text = re.sub(r'\s+', ' ', text).strip()
-
-    return text
-
-
-def build_corpus(df: pd.DataFrame) -> pd.Series:
-    
-    """"
-    Nettoyage du texte et création de la colonne "text" en concaténant les colonnes "designation" et "description" 
-    Après nettoyage du corpus avec la fonction clean_text
-    """
-
-     # Nettoyage du texte simple pour les colonnes de texte
-    df['clean_designation'] = df['designation'].apply(clean_text)
-    df['clean_description'] = df['description'].apply(clean_text)
-
-    # Concatenation designation + description dans une nouvelle colonne "text" pour l'analyse de texte
-    df['text'] = df['clean_designation'] + ' ' + df['clean_description']
-
-    return df["text"]
-
-
-def build_stopword_set() -> set:
-    """
-    Construit l'ensemble des stopwords français et anglais, ainsi que le mot "generique" (omniprésent dans les textes).
-    """
-    nltk.download("stopwords", quiet=True)
-
-    stop_fr = set(stopwords.words("french"))
-    stop_en = set(stopwords.words("english"))
-
-    stop_set = stop_fr.union(stop_en) # Combine les stopwords français et anglais
-    stop_set.add("generique") # Ajoute le mot "generique" à l'ensemble des stopwords
-
-    return stop_set
-
-
-def delete_stopwords(text: str, stop_set: set):
-    """
-    Suppression des mots vides (stopwords)
-    """
-    tokens = [
-        w for w in text.split()
-        if w not in stop_set and len(w) > 1  # Garde mots > 1 caractère
-    ]
-    return " ".join(tokens) 
-
-
-def stem_text(text: str, stemmer: SnowballStemmer) -> str:
-    """
-    Application du stemming français sur chaque mot
-    """
-    tokens = [stemmer.stem(w) for w in text.split()] # Stemming mot par mot 
-    return " ".join(tokens)  
-
-
 # Encodage des labels de la variable cible avec LabelEncoder
 def label_encoder(y: pd.Series) -> tuple[np.ndarray, LabelEncoder]:
     """
@@ -187,6 +77,7 @@ def split_data(X: pd.Series, y: np.ndarray) -> tuple:
 
     return X_train, X_valid, y_train, y_valid
 
+
 def vectorize_text(X_train: pd.Series, X_valid: pd.Series) -> tuple:
     """
     Vectorisation du texte avec TfidfVectorizer, 
@@ -195,7 +86,7 @@ def vectorize_text(X_train: pd.Series, X_valid: pd.Series) -> tuple:
     """
     # Initialisation de TfidfVectorizer avec des paramètres pour limiter le nombre de features et les n-grams
     tfidf = TfidfVectorizer(
-        max_features=100, # Limite le nombre de features à 50 avec TF-IDF pour un entraînement plus rapide
+        max_features=150, # Limite le nombre de features à 150 avec TF-IDF pour un entraînement plus rapide
         ngram_range=(1, 2),
         min_df=2,
         max_df=0.95
@@ -207,6 +98,7 @@ def vectorize_text(X_train: pd.Series, X_valid: pd.Series) -> tuple:
 
     return X_train_tfidf, X_valid_tfidf, tfidf
 
+
 def save_artifacts(X_train, y_train, X_valid, y_valid, tfidf, label_encoder, artifacts_dir: Path):
     """
     Enregistre les artéfacts de l'ingestion et du préprocessing :
@@ -215,7 +107,7 @@ def save_artifacts(X_train, y_train, X_valid, y_valid, tfidf, label_encoder, art
     - TfidfVectorizer pour la vectorisation 
     - LabelEncoder pour l'encodage  des labels
     """
-    print("[INGEST] save_artifacts appelé")
+    print("[INGEST] Lancement de la sauvegarde des artefacts")
 
     sparse.save_npz(artifacts_dir / "X_train.npz", X_train) # Enregistre la matrice TF-IDF d'entraînement
     np.save(artifacts_dir / "y_train.npy", y_train) # Enregistre les labels encodés d'entraînement
@@ -248,42 +140,38 @@ def save_artifacts(X_train, y_train, X_valid, y_valid, tfidf, label_encoder, art
         }
     }
 
-    with open(artifacts_dir / "ingestion_metadata.json", "w") as f:
-        json.dump(ingestion_metadata, f)
+    metadata_path = artifacts_dir / "ingestion_metadata.json"
+    with open(metadata_path, "w", encoding="utf-8") as f:
+        json.dump(ingestion_metadata, f, indent=2, ensure_ascii=False)
 
-    print(f"Artifacts enregistrés dans {artifacts_dir}")
-
+    print(f"[INGEST] Artefacts créés et enregistrés dans le dossier ./{artifacts_dir}")
 
 
 def main():
-    print("[INGEST] script lancé")
+    print("[INGEST] Démarrage de l'ingestion")
 
     # Chargement des données brutes
     df = load_raw_data(X_TRAIN_PATH, Y_TRAIN_PATH) 
+    print(f"[INGEST] Dataset chargé : {df.shape}")
 
     # Nettoyage du texte et création de la colonne "text"
     corpus = build_corpus(df)
-
-    # Construction de l'ensemble de stopwords
-    stop_set = build_stopword_set() 
-    
-    # Initialisation du stemmer français
-    stemmer = SnowballStemmer("french") 
-    
-    # Suppression des stopwords
-    corpus_cleaned = corpus.apply(lambda x: delete_stopwords(x, stop_set)) 
-    
-    # Application du stemming sur le texte nettoyé
-    corpus_stemmed = corpus_cleaned.apply(lambda x: stem_text(x, stemmer)) 
+    print("[INGEST] Corpus construit et prétraité")
     
     # Encodage des labels de la variable cible
     y_enc, le = label_encoder(df["prdtypecode"]) 
-    
+    print("[INGEST] Labels encodés")
+
     # Séparation des données en un ensemble d'entraînement et de validation
-    X_train, X_valid, y_train, y_valid = split_data(corpus_stemmed, y_enc)
-    
+    X_train, X_valid, y_train, y_valid = split_data(corpus, y_enc)
+    print(f"[INGEST] Split Train : {X_train.shape[0]} échantillons")
+    print(f"[INGEST] Split Valid : {X_valid.shape[0]} échantillons")
+
     # Vectorisation du texte avec TfidfVectorizer
     X_train_tfidf, X_valid_tfidf, tfidf = vectorize_text(X_train, X_valid)
+    print(f"[INGEST] TF-IDF train shape : {X_train_tfidf.shape}")
+    print(f"[INGEST] TF-IDF valid shape : {X_valid_tfidf.shape}")
+    print(f"[INGEST] Textes vectorisés avec TF-IDF : {X_train_tfidf.shape[1]} features")
 
     # Enregistrement des artéfacts de l'ingestion et du préprocessing
     save_artifacts(
@@ -292,6 +180,9 @@ def main():
         tfidf, le,
         ARTIFACTS_DIR 
     )
+
+    print("[INGEST] Ingestion terminée avec succès !")
+
 
 if __name__ == "__main__":
     main()
