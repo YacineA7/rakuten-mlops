@@ -1,14 +1,19 @@
-global:
+global: # Configuration globale de Prometheus
   scrape_interval: 15s
   evaluation_interval: 15s
 
-scrape_configs:
+scrape_configs: # Configuration des cibles à scraper pour Prometheus
   - job_name: "rakuten-api"
     metrics_path: /metrics
     static_configs:
       - targets: ["api:8000"]
 
-  - job_name: "rakuten-mlflow"
+  - job_name: "rakuten-pushgateway" # Ajout d'une configuration de scrape pour Prometheus Pushgateway afin de collecter les métriques exposées par les différents jobs qui pushent leurs métriques à Pushgateway
+    honor_labels: true
+    static_configs:
+      - targets: ["pushgateway:9091"]
+  
+  - job_name: "rakuten-mlflow" # Ajout d'une configuration de scrape pour MLflow afin de collecter les métriques exposées par MLflow
     metrics_path: /metrics
     static_configs:
       - targets: ["mlflow:5000"]

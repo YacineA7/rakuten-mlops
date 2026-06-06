@@ -5,10 +5,13 @@ from airflow.operators.bash import BashOperator
 
 PROJECT_DIR = "/opt/airflow/project"
 
-@dag(
+DOCKER_COMPOSE_CMD = f"cd {PROJECT_DIR} && docker compose"
+
+
+@dag( # Définition du DAG Airflow pour la pipeline de machine learning de Rakuten
     dag_id="rakuten_ml_pipeline",
     start_date=datetime(2026, 1, 1),
-    schedule=None,
+    schedule=None, 
     catchup=False,
     tags=["rakuten", "ml", "training"],
 )
@@ -24,22 +27,22 @@ def rakuten_ml_pipeline():
     """
     ingest = BashOperator(
         task_id="ingest",
-        bash_command=f"cd {PROJECT_DIR} && PYTHONPATH={PROJECT_DIR} python -m scripts.ingest_script", #
+        bash_command=f"{DOCKER_COMPOSE_CMD} run --rm ingest",
     )
 
     train = BashOperator(
         task_id="train",
-        bash_command=f"cd {PROJECT_DIR} && PYTHONPATH={PROJECT_DIR} python -m scripts.train_script",
+        bash_command=f"{DOCKER_COMPOSE_CMD} run --rm train",
     )
 
     evaluate = BashOperator(
         task_id="evaluate",
-        bash_command=f"cd {PROJECT_DIR} && PYTHONPATH={PROJECT_DIR} python -m scripts.evaluate_script",
+        bash_command=f"{DOCKER_COMPOSE_CMD} run --rm evaluate",
     )
 
     reload_model = BashOperator(
         task_id="reload_model",
-        bash_command=f"cd {PROJECT_DIR} && PYTHONPATH={PROJECT_DIR} python -m scripts.reload_script",
+        bash_command=f"{DOCKER_COMPOSE_CMD} run --rm reload",
     )
 
     ingest >> train >> evaluate >> reload_model

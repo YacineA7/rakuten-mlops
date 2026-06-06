@@ -1,3 +1,11 @@
+"""
+Script de bootstrap pour le registre MLflow :
+- Récupère toutes les versions du modèle spécifié
+- Récupère le tag 'status' d'une version de modèle 
+- Récupère une métrique depuis les tags MLflow, sinon renvoie -1
+- Sélectionne la version à passer en prod : parmi les versions avec status='test',
+"""
+
 import os
 from mlflow import MlflowClient
 

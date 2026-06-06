@@ -1,3 +1,13 @@
+"""
+Module de prédiction pour le projet Rakuten MLOps.
+Ce module définit la classe RakutenPredictor, qui contient la logique de chargement du modèle et de prédiction.
+Il inclut également les fonctions pour interagir avec MLflow Registry, telles que :
+- Récupérer les versions du modèle
+- Récupérer les métriques et tags associés à chaque version
+- Sélectionner la meilleure version test pour la promotion en prod
+- Promouvoir une version test en prod et archiver les anciennes versions prod
+"""
+
 import os
 from pathlib import Path
 
@@ -11,6 +21,8 @@ ARTIFACTS_DIR = Path("artifacts")
 TFIDF_PATH = ARTIFACTS_DIR / "tfidf_vectorizer.pkl"
 LABEL_ENCODER_PATH = ARTIFACTS_DIR / "label_encoder.pkl"
 MODEL_NAME = "xgboost_text_tfidf"
+SELECTION_METRIC = "f1_weighted"
+
 
 
 class RakutenPredictor:
@@ -47,6 +59,19 @@ class RakutenPredictor:
         return max(versions, key=lambda v: int(v.version))
 
 
+    def _get_metric(self, version, metric_name: str) -> float:
+        """Récupère une métrique depuis les tags MLflow, sinon renvoie -1."""
+        if version is None:
+            return -1.0
+        raw_value = (getattr(version, "tags", {}) or {}).get(metric_name)
+        if raw_value is None:
+            return -1.0
+        try:
+            return float(raw_value)
+        except (TypeError, ValueError):
+            return -1.0
+        
+
     def _get_latest_version_by_status(self, status_value: str):
         """Récupère la version la plus récente du modèle avec un statut donné (ex: 'prod' ou 'test')."""
         versions = self._list_versions()
@@ -59,6 +84,22 @@ class RakutenPredictor:
             return None
 
         return max(matching_versions, key=lambda v: int(v.version))
+
+
+    def _pick_best_test_version(self, versions):
+        """
+        Sélectionne la meilleure version test selon f1_weighted.
+        En cas d'égalité, prend la plus récente.
+        """
+        test_versions = [v for v in versions if self._get_status(v) == "test"]
+
+        if not test_versions:
+            return None
+
+        return max(
+            test_versions,
+            key=lambda v: (self._get_metric(v, SELECTION_METRIC), int(v.version))
+        )
 
 
     def reload_prod_model(self):
@@ -90,45 +131,69 @@ class RakutenPredictor:
 
 
     def promote_test_if_better(self):
-        """Compare les performances du modèle test avec le modèle prod actuel, et promeut le modèle test en prod si il a une meilleure performance."""
-        test_version = self._get_latest_version_by_status("test")
-        prod_version = self._get_latest_version_by_status("prod")
+        """
+        Promeut en prod la meilleure version test selon f1_weighted
+        et archive les anciennes prod.
+        """
+        versions = self._list_versions()
+        if not versions:
+            raise RuntimeError(f"Aucune version trouvée pour le modèle {MODEL_NAME}")
 
-        if test_version is None:
-            return {"message": "Aucun modèle test disponible"}
-
-        test_score = float((getattr(test_version, "tags", {}) or {}).get("f1_weighted", "-1"))
-
-        if prod_version is None:
-            self.client.set_model_version_tag(MODEL_NAME, test_version.version, "status", "prod")
-            self.reload_prod_model()
+        target_version = self._pick_best_test_version(versions)
+        if target_version is None:
             return {
-                "action": "promu",
-                "new_prod_version": test_version.version,
-                "reason": "Aucun modèle prod existant"
+                "action": "no_test_available",
+                "message": "Aucun modèle test disponible"
             }
 
-        prod_score = float((getattr(prod_version, "tags", {}) or {}).get("f1_weighted", "-1"))
+        target_score = self._get_metric(target_version, SELECTION_METRIC)
 
-        if test_score > prod_score:
-            self.client.set_model_version_tag(MODEL_NAME, prod_version.version, "status", "archive")
-            self.client.set_model_version_tag(MODEL_NAME, test_version.version, "status", "prod")
-            self.reload_prod_model()
-            return {
-                "action": "promu",
-                "archived_version": prod_version.version,
-                "new_prod_version": test_version.version,
-                "test_score": test_score,
-                "prod_score": prod_score
-            }
+        current_prod_versions = [
+            v for v in versions
+            if self._get_status(v) == "prod" and str(v.version) != str(target_version.version)
+        ]
 
-        return {
-            "action": "kept_prod",
-            "test_version": test_version.version,
-            "prod_version": prod_version.version,
-            "test_score": test_score,
-            "prod_score": prod_score
+        current_prod_version = (
+            max(current_prod_versions, key=lambda v: int(v.version))
+            if current_prod_versions else None
+        )
+        current_prod_score = self._get_metric(current_prod_version, SELECTION_METRIC)
+
+        for v in current_prod_versions:
+            self.client.set_model_version_tag(
+                name=MODEL_NAME,
+                version=str(v.version),
+                key="status",
+                value="archive"
+            )
+
+        self.client.set_model_version_tag(
+            name=MODEL_NAME,
+            version=str(target_version.version),
+            key="status",
+            value="prod"
+        )
+
+        self.reload_prod_model()
+
+        result = {
+            "action": "promu",
+            "selection_metric": SELECTION_METRIC,
+            "new_prod_version": str(target_version.version),
+            "test_version": str(target_version.version),
+            "test_score": target_score,
+            "reason": "Meilleure version test sélectionnée selon f1_weighted"
         }
+
+        if current_prod_version is not None:
+            result["prod_version"] = str(current_prod_version.version)
+            result["prod_score"] = current_prod_score
+            result["archived_version"] = str(current_prod_version.version)
+
+        if current_prod_versions:
+            result["archived_versions"] = [str(v.version) for v in current_prod_versions]
+
+        return result
 
 
     def get_model_info(self):

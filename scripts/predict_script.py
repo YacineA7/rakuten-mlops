@@ -38,7 +38,6 @@ MODEL_DIR = Path("models")
 PREDICTION_DIR = Path("predictions")  # Dossier pour enregistrer les prédictions
 PREDICTION_DIR.mkdir(parents=True, exist_ok=True)  # Création du
 
-
 X_VALID_PATH = DATA_DIR / "X_test_update.csv"
 TFIDF_PATH = ARTIFACTS_DIR / "tfidf_vectorizer.pkl"
 LABEL_ENCODER_PATH = ARTIFACTS_DIR / "label_encoder.pkl"

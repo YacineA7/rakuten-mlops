@@ -1,3 +1,9 @@
+"""
+Ce script est responsable de l'évaluation du modèle XGBoost sur l'ensemble de validation préparé par ingest_script.py. 
+Il charge les artefacts nécessaires, calcule les métriques d'évaluation (accuracy, f1_macro, f1_weighted), 
+construit un rapport de classification détaillé et une matrice de confusion, puis sauvegarde tous ces résultats dans le dossier reports/.
+"""
+
 import json
 from pathlib import Path
 
@@ -8,11 +14,20 @@ from scipy import sparse
 
 from sklearn.metrics import accuracy_score, f1_score, classification_report, confusion_matrix
 
+import os
+from time import perf_counter
+from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, push_to_gateway
+
+import warnings
+warnings.filterwarnings("ignore")
 
 ARTIFACTS_DIR = Path("artifacts")
 MODEL_DIR = Path("models")
 REPORTS_DIR = Path("reports")
 REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
+PROMETHEUS_PUSHGATEWAY_URL = os.getenv("PROMETHEUS_PUSHGATEWAY_URL", "pushgateway:9091")
+JOB_NAME = "rakuten_evaluate"
 
 X_VALID_PATH = ARTIFACTS_DIR / "X_valid.npz"
 Y_VALID_PATH = ARTIFACTS_DIR / "y_valid.npy"
@@ -150,32 +165,103 @@ def save_evaluation_outputs(metrics, report, cm_df):
     print("[EVAL]   → confusion_matrix.csv")
 
 
+def build_registry():
+    registry = CollectorRegistry()
+
+    evaluate_runs_total = Counter(
+        "rakuten_evaluate_runs_total",
+        "Nombre total d'exécutions du script evaluate",
+        ["status"],
+        registry=registry
+    )
+
+    evaluate_duration_seconds = Histogram(
+        "rakuten_evaluate_duration_seconds",
+        "Durée totale du script evaluate",
+        buckets=(1, 5, 10, 30, 60, 120, 300, 600),
+        registry=registry
+    )
+
+    evaluate_validation_samples = Gauge(
+        "rakuten_evaluate_validation_samples",
+        "Nombre d'échantillons évalués",
+        registry=registry
+    )
+
+    evaluate_predictions_total = Gauge(
+        "rakuten_evaluate_predictions_total",
+        "Nombre total de prédictions générées pendant l'évaluation",
+        registry=registry
+    )
+
+    evaluate_score = Gauge(
+        "rakuten_evaluate_score",
+        "Scores calculés par evaluate_script",
+        ["score_type"],
+        registry=registry
+    )
+
+    evaluate_artifacts_written_total = Counter(
+        "rakuten_evaluate_artifacts_written_total",
+        "Nombre d'artefacts écrits par evaluate_script",
+        ["artifact_type"],
+        registry=registry
+    )
+
+    return registry, {
+        "evaluate_runs_total": evaluate_runs_total,
+        "evaluate_duration_seconds": evaluate_duration_seconds,
+        "evaluate_validation_samples": evaluate_validation_samples,
+        "evaluate_predictions_total": evaluate_predictions_total,
+        "evaluate_score": evaluate_score,
+        "evaluate_artifacts_written_total": evaluate_artifacts_written_total,
+    }
+
+
 def main():
-    print("=" * 60)
-    print("[EVAL] Démarrage de l'évaluation")
-    print("=" * 60)
+    start = perf_counter() # Démarre le chronomètre pour mesurer la durée totale de l'évaluation
+    registry, metrics_registry = build_registry() # Initialise la registry Prometheus et les métriques spécifiques au script d'évaluation
 
-    # Chargement
-    X_valid, y_valid, model, label_encoder = load_eval_artifacts()
+    try:
+        print("=" * 60)
+        print("[EVAL] Démarrage de l'évaluation")
+        print("=" * 60)
 
-    # Prédictions
-    y_pred = predict_validation(model, X_valid)
+        X_valid, y_valid, model, label_encoder = load_eval_artifacts() # Chargement des artefacts nécessaires à l'évaluation
+        metrics_registry["evaluate_validation_samples"].set(int(X_valid.shape[0]))
 
-    # Métriques globales
-    metrics = evaluate_model(y_valid, y_pred)
+        y_pred = predict_validation(model, X_valid) # Génération des prédictions sur l'ensemble de validation
+        metrics_registry["evaluate_predictions_total"].set(int(len(y_pred)))
 
-    # Rapport détaillé par classe
-    report = build_classification_report(y_valid, y_pred, label_encoder)
+        metrics = evaluate_model(y_valid, y_pred) # Calcul des métriques d'évaluation
+        metrics_registry["evaluate_score"].labels(score_type="accuracy").set(float(metrics["accuracy"]))
+        metrics_registry["evaluate_score"].labels(score_type="f1_macro").set(float(metrics["f1_macro"]))
+        metrics_registry["evaluate_score"].labels(score_type="f1_weighted").set(float(metrics["f1_weighted"]))
 
-    # Matrice de confusion
-    cm_df = build_confusion_matrix(y_valid, y_pred, label_encoder)
+        report = build_classification_report(y_valid, y_pred, label_encoder) # Construction du rapport de classification détaillé par classe
+        cm_df = build_confusion_matrix(y_valid, y_pred, label_encoder) # Construction de la matrice de confusion
 
-    # Sauvegarde
-    save_evaluation_outputs(metrics, report, cm_df)
+        save_evaluation_outputs(metrics, report, cm_df) # Sauvegarde de tous les résultats d'évaluation (métriques globales, rapport détaillé, matrice de confusion)
+        metrics_registry["evaluate_artifacts_written_total"].labels(artifact_type="evaluation_metrics_json").inc()
+        metrics_registry["evaluate_artifacts_written_total"].labels(artifact_type="classification_report_json").inc()
+        metrics_registry["evaluate_artifacts_written_total"].labels(artifact_type="confusion_matrix_csv").inc()
 
-    print("=" * 60)
-    print("[EVAL] Évaluation terminée avec succès.")
-    print("=" * 60)
+        metrics_registry["evaluate_runs_total"].labels(status="success").inc()
+        metrics_registry["evaluate_duration_seconds"].observe(perf_counter() - start)
+
+    except Exception: # En cas d'erreur, incrémente le compteur d'exécutions échouées et observe la durée avant de push les métriques à Prometheus
+        metrics_registry["evaluate_runs_total"].labels(status="failed").inc()
+        metrics_registry["evaluate_duration_seconds"].observe(perf_counter() - start)
+        try:
+            push_to_gateway(PROMETHEUS_PUSHGATEWAY_URL, job=JOB_NAME, registry=registry)
+        except Exception as push_error:
+            print(f"[EVAL][PROMETHEUS] Push impossible : {push_error}")
+        raise
+
+    try:
+        push_to_gateway(PROMETHEUS_PUSHGATEWAY_URL, job=JOB_NAME, registry=registry)  # Push des métriques à Prometheus via le Pushgateway après l'exécution du script, que ce soit en cas de succès ou d'échec
+    except Exception as e:
+        print(f"[EVAL][PROMETHEUS] Push impossible : {e}")
 
 
 if __name__ == "__main__":

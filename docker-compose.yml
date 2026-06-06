@@ -32,7 +32,8 @@ services:
       - ./artifacts:/app/artifacts
     environment:
       PYTHONPATH: /app
-    command: python -m scripts.ingest_script
+      PROMETHEUS_PUSHGATEWAY_URL: http://pushgateway:9091
+    command: python /app/scripts/ingest_script.py
 
   train:
     build:
@@ -48,9 +49,11 @@ services:
     environment:
       MLFLOW_TRACKING_URI: http://mlflow:5000
       PYTHONPATH: /app
+      PROMETHEUS_PUSHGATEWAY_URL: http://pushgateway:9091
     depends_on:
       - mlflow
-    command: python -m scripts.train_script
+      - pushgateway
+    command: python /app/scripts/train_script.py
 
   predict:
     build:
@@ -66,7 +69,8 @@ services:
       - ./predictions:/app/predictions
     environment:
       PYTHONPATH: /app
-    command: python -m scripts.predict_script
+      PROMETHEUS_PUSHGATEWAY_URL: http://pushgateway:9091
+    command: python /app/scripts/predict_script.py
 
   evaluate:
     build:
@@ -81,7 +85,27 @@ services:
       - ./reports:/app/reports
     environment:
       PYTHONPATH: /app
-    command: python -m scripts.evaluate_script
+      PROMETHEUS_PUSHGATEWAY_URL: http://pushgateway:9091
+    depends_on:
+      - pushgateway
+    command: python /app/scripts/evaluate_script.py
+
+  reload:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rakuten-reload
+    working_dir: /app
+    volumes:
+      - ./:/app
+    environment:
+      PYTHONPATH: /app
+      RAKUTEN_API_URL: http://api:8000
+      PROMETHEUS_PUSHGATEWAY_URL: http://pushgateway:9091
+    depends_on:
+      - api
+      - pushgateway
+    command: python /app/scripts/reload_script.py
 
   gateway:
     image: nginx:1.27-alpine
@@ -106,12 +130,13 @@ services:
       - ./models:/app/models
     environment:
       MLFLOW_TRACKING_URI: http://mlflow:5000
+      PROMETHEUS_PUSHGATEWAY_URL: http://pushgateway:9091
     expose:
       - "8000"
     depends_on:
       - mlflow
     command: uvicorn api.main:app --host 0.0.0.0 --port 8000
-  
+
   airflow-postgres:
     image: postgres:16
     container_name: airflow-postgres
@@ -128,7 +153,9 @@ services:
       retries: 5
 
   x-airflow-common: &airflow-common
-    image: apache/airflow:2.10.2
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
     working_dir: /opt/airflow
     environment: &airflow-common-env
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
@@ -137,12 +164,14 @@ services:
       AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "True"
       AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "False"
       AIRFLOW_UID: 50000
+      COMPOSE_PROJECT_NAME: projet-rakuten
     volumes:
       - ./:/opt/airflow/project
       - ./dags:/opt/airflow/dags
       - ./airflow/logs:/opt/airflow/logs
       - ./airflow/plugins:/opt/airflow/plugins
       - ./airflow/config:/opt/airflow/config
+      - /var/run/docker.sock:/var/run/docker.sock
     user: "${AIRFLOW_UID:-50000}:0"
     depends_on:
       airflow-postgres:
@@ -189,6 +218,7 @@ services:
     container_name: rakuten-prometheus
     depends_on:
       - api
+      - pushgateway
     ports:
       - "9090:9090"
     volumes:
@@ -197,7 +227,29 @@ services:
       - "--config.file=/etc/prometheus/prometheus.yml"
     restart: unless-stopped
 
+  pushgateway:
+    image: prom/pushgateway:v1.8.0
+    container_name: rakuten-pushgateway
+    ports:
+      - "9091:9091"
+    restart: unless-stopped
 
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: rakuten-grafana
+    depends_on:
+      - prometheus
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./monitoring/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./monitoring/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    restart: unless-stopped
+    
 volumes:
   airflow-postgres-db-volume:
-

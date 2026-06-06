@@ -86,7 +86,7 @@ def vectorize_text(X_train: pd.Series, X_valid: pd.Series) -> tuple:
     """
     # Initialisation de TfidfVectorizer avec des paramètres pour limiter le nombre de features et les n-grams
     tfidf = TfidfVectorizer(
-        max_features=150, # Limite le nombre de features à 150 avec TF-IDF pour un entraînement plus rapide
+        max_features=100, # Limite le nombre de features à 100 avec TF-IDF pour un entraînement plus rapide
         ngram_range=(1, 2),
         min_df=2,
         max_df=0.95
@@ -133,7 +133,7 @@ def save_artifacts(X_train, y_train, X_valid, y_valid, tfidf, label_encoder, art
             "stratify": True
         },
         "tfidf_params": {
-            "max_features": 50000,
+            "max_features": 100,
             "ngram_range": (1, 2),
             "min_df": 2,
             "max_df": 0.95

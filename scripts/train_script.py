@@ -1,5 +1,7 @@
-"""Script d'entraînement du modèle XGBoost pour la classification de texte.
-Ce script charge les données prétraitées, construit et entraîne un modèle XGBoost."""
+"""
+Script d'entraînement du modèle XGBoost pour la classification de texte.
+Ce script charge les données prétraitées, construit et entraîne un modèle XGBoost.
+"""
 
 from pathlib import Path
 import json
@@ -15,6 +17,8 @@ import mlflow.sklearn
 from mlflow import MlflowClient
 
 import os
+from time import perf_counter
+from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, push_to_gateway
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -25,6 +29,9 @@ MODEL_DIR = Path("models") # Dossier où est enregistré le modèle entraîné
 MLRUNS_DIR = Path("mlruns") # Dossier où MLflow stocke les expériences et les runs : contient tous les logs, métriques, modèles enregistrés par MLflow
 EXPERIMENT_NAME = "rakuten_text_xgboost" # Nom de l'expérience MLflow : tous les runs seront organisés sous ce nom d'expérience
 MODEL_DIR.mkdir(parents=True, exist_ok=True) # Création du dossier si il n'existe pas
+
+PROMETHEUS_PUSHGATEWAY_URL = os.getenv("PROMETHEUS_PUSHGATEWAY_URL", "pushgateway:9091")
+JOB_NAME = "rakuten_train"
 
 mlflow.set_experiment(EXPERIMENT_NAME) # Définit l'expérience MLflow : tous les runs seront organisés sous ce nom d'expérience
 
@@ -224,40 +231,123 @@ def log_to_mlflow(model, params: dict, metrics: dict | None):
 
     print(f"[TRAIN][MLFLOW] Modèle enregistré dans MLflow Registry avec run_id : {run_id}, version : {latest_version} et statut : test")
     print("[TRAIN][MLFLOW] Enregistrement dans MLflow terminé.")
+    return (latest_version) # Retourne la version du modèle dans le registre MLflow pour pouvoir l'utiliser dans l'API lors de la promotion du modèle en production
+
+
+def build_registry():
+    """
+    Construit et retourne un registre de métriques Prometheus pour le script d'entraînement.
+    """
+    registry = CollectorRegistry()
+
+    train_runs_total = Counter(
+        "rakuten_train_runs_total",
+        "Nombre total d'exécutions du script train",
+        ["status"],
+        registry=registry
+    )
+
+    train_duration_seconds = Histogram(
+        "rakuten_train_duration_seconds",
+        "Durée totale du script train",
+        buckets=(1, 5, 10, 30, 60, 120, 300, 600, 1200),
+        registry=registry
+    )
+
+    train_dataset_samples = Gauge(
+        "rakuten_train_dataset_samples",
+        "Nombre d'échantillons utilisés pendant l'entraînement",
+        ["split"],
+        registry=registry
+    )
+
+    train_num_classes = Gauge(
+        "rakuten_train_num_classes",
+        "Nombre de classes du problème",
+        registry=registry
+    )
+
+    train_validation_score = Gauge(
+        "rakuten_train_validation_score",
+        "Scores de validation calculés pendant train_script",
+        ["score_type"],
+        registry=registry
+    )
+
+    train_model_registry_version = Gauge(
+        "rakuten_train_model_registry_version",
+        "Version MLflow Registry créée par train_script",
+        registry=registry
+    )
+
+    train_mlflow_log_total = Counter(
+        "rakuten_train_mlflow_log_total",
+        "Nombre de logs MLflow réussis ou échoués",
+        ["status"],
+        registry=registry
+    )
+
+    return registry, {
+        "train_runs_total": train_runs_total,
+        "train_duration_seconds": train_duration_seconds,
+        "train_dataset_samples": train_dataset_samples,
+        "train_num_classes": train_num_classes,
+        "train_validation_score": train_validation_score,
+        "train_model_registry_version": train_model_registry_version,
+        "train_mlflow_log_total": train_mlflow_log_total,
+    }
 
 
 def main():
-    """
-    Fonction principale pour l'entrainement du modèle
-    """
-    print("[TRAIN] Démarrage de l'entraînement")
+    start = perf_counter() # Démarre le chronomètre pour mesurer la durée totale de l'entraînement
+    registry, metrics = build_registry() # Initialise la registry Prometheus et les métriques spécifiques au script d'entraînement
 
-    X_train, y_train, X_valid, y_valid = load_data() # Chargement des données d'entraînement et de validation prétraitées
-    print(f"[TRAIN] X_train shape : {X_train.shape}")
-    print(f"[TRAIN] y_train shape : {y_train.shape}")
+    try:
+        print("[TRAIN] Démarrage de l'entraînement")
 
-    num_classes = len(np.unique(y_train)) # Détermine le nombre de classes à partir des étiquettes d'entraînement
-    print(f"[TRAIN] Nombre de classes : {num_classes}")
+        X_train, y_train, X_valid, y_valid = load_data() # Chargement des données d'entraînement et de validation prétraitées
+        metrics["train_dataset_samples"].labels(split="train").set(int(X_train.shape[0]))
+        if X_valid is not None:
+            metrics["train_dataset_samples"].labels(split="valid").set(int(X_valid.shape[0]))
 
-    params = get_model_params(num_classes) # Récupère les hyperparamètres du modèle
-    print(f"[TRAIN] Hyperparamètres : {params}")
+        num_classes = len(np.unique(y_train)) # Détermine le nombre de classes à partir des étiquettes d'entraînement
+        metrics["train_num_classes"].set(int(num_classes))
 
-    model = build_model(params) # Construit le modèle XGBoost avec les hyperparamètres spécifiés
-    print("[TRAIN] Modèle XGBoost initialisé")
+        params = get_model_params(num_classes) # Récupère les hyperparamètres du modèle
 
-    model = train_model(model, X_train, y_train, X_valid, y_valid) # Entraîne le modèle sur les données d'entraînement, avec validation
-    
-    save_model(model, MODEL_DIR, num_classes) # Enregistre le modèle entraîné et les métadonnées d'entraînement
+        model = build_model(params) # Construit le modèle XGBoost avec les hyperparamètres spécifiés
 
-    metrics = evaluate_model(model, X_valid, y_valid) # Évaluation du modèle sur l'ensemble de validation
-    if metrics is not None:
-        print(f"[TRAIN] Accuracy    : {metrics['accuracy']:.6f}")
-        print(f"[TRAIN] F1 macro    : {metrics['f1_macro']:.6f}")
-        print(f"[TRAIN] F1 weighted : {metrics['f1_weighted']:.6f}")
+        model = train_model(model, X_train, y_train, X_valid, y_valid) # Entraîne le modèle sur les données d'entraînement, avec validation
 
-    log_to_mlflow(model, params, metrics) # Enregistrement dans MLflow
+        save_model(model, MODEL_DIR, num_classes) # Enregistre le modèle entraîné et les métadonnées d'entraînement
 
-    print("[TRAIN] Entraînement terminé avec succès")
+        eval_metrics = evaluate_model(model, X_valid, y_valid) # Évaluation du modèle sur l'ensemble de validation
+        if eval_metrics is not None: # Log des métriques de validation dans Prometheus
+            metrics["train_validation_score"].labels(score_type="accuracy").set(float(eval_metrics["accuracy"]))
+            metrics["train_validation_score"].labels(score_type="f1_macro").set(float(eval_metrics["f1_macro"]))
+            metrics["train_validation_score"].labels(score_type="f1_weighted").set(float(eval_metrics["f1_weighted"]))
+
+        latest_version = log_to_mlflow(model, params, eval_metrics) # Enregistrement dans MLflow et récupération de la version du modèle dans le registre MLflow
+        metrics["train_model_registry_version"].set(int(latest_version))
+        metrics["train_mlflow_log_total"].labels(status="success").inc()
+
+        metrics["train_runs_total"].labels(status="success").inc()
+        metrics["train_duration_seconds"].observe(perf_counter() - start)
+
+    except Exception: # En cas d'erreur, incrémente les compteurs d'échec et observe la durée avant de push les métriques à Prometheus
+        metrics["train_mlflow_log_total"].labels(status="failed").inc()
+        metrics["train_duration_seconds"].observe(perf_counter() - start)
+        try:
+            push_to_gateway(PROMETHEUS_PUSHGATEWAY_URL, job=JOB_NAME, registry=registry)
+        except Exception as push_error:
+            print(f"[TRAIN][PROMETHEUS] Push impossible : {push_error}")
+
+        raise
+
+    try:
+        push_to_gateway(PROMETHEUS_PUSHGATEWAY_URL, job=JOB_NAME, registry=registry)  # Push des métriques à Prometheus via le Pushgateway après l'exécution du script, que ce soit en cas de succès ou d'échec
+    except Exception as e:
+        print(f"[TRAIN][PROMETHEUS] Push impossible : {e}")
 
 
 if __name__ == "__main__":
