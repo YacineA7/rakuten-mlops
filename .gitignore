@@ -72,4 +72,7 @@ docker-data/
 nltk_data/
 .cache/
 tmp/
-temp/
+temp/.dvc/ 
+.dvc/
+.vscode/ 
+notebook/
