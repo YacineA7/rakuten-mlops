@@ -1,5 +1,10 @@
+"""
+Tests unitaires pour les fonctions des différents scripts du projet
+pour les fonctions de nettoyage, de vectorisation, de prédiction et de décodage des classes.
+"""
+
+
 import pandas as pd
-import pytest
 from pathlib import Path
 from nltk.stem import SnowballStemmer
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -16,7 +21,6 @@ from scripts.predict_script import (
     vectorize_text,
     predict_classes,
     decode_predictions,
-    save_predictions,
 )
 
 
@@ -64,17 +68,18 @@ def test_stem_text() -> None:
     assert result == expected
 
 
-def test_load_rawdata_with_id(tmp_path) -> None:
-    """Vérifie que load_rawdata lit un fichier CSV et utilise la colonne id comme index."""
+def test_load_test_data_with_id(tmp_path) -> None:
+    """Vérifie que load_test_data lit un fichier CSV et utilise la colonne id comme index."""
     csv_path = tmp_path / "X_test_update.csv"
 
     df = pd.DataFrame({"id": [1, 2], "text": ["A", "B"]})
     df.to_csv(csv_path, index=False)
 
-    result = ps.load_rawdata(csv_path)
+    result = ps.load_test_data(csv_path)
 
     expected = pd.DataFrame({"text": ["A", "B"]}, index=pd.Index([1, 2], name="id"))
     pd.testing.assert_frame_equal(result, expected)
+
 
 def test_vectorize_text() -> None:
     """Vérifie que vectorize_text retourne une matrice de la bonne forme."""
@@ -83,3 +88,22 @@ def test_vectorize_text() -> None:
     corpus = pd.Series(["produit bon"])
     X = vectorize_text(corpus, tfidf)
     assert X.shape[0] == 1
+
+
+def test_predict_classes(): 
+    """Vérifie la fonction predict_classes avec un modèle factice."""
+    class DummyModel:
+        def predict(self, X):
+            return [1]
+
+    X = [[0, 1, 0]]
+    y = predict_classes(DummyModel(), X)
+    assert list(y) == [1]
+
+
+def test_decode_predictions():
+    """Vérifie que decode_predictions décode correctement les classes prédites."""
+    le = LabelEncoder()
+    le.fit([10, 20, 30])
+    y = decode_predictions([1], le)
+    assert list(y) == [20]

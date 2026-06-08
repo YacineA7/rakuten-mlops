@@ -1,3 +1,7 @@
+"""
+Ce fichier contient des tests unitaires pour vérifier le bon fonctionnement des endpoints de prédiction et de reload de l'API
+"""
+
 
 from fastapi.testclient import TestClient
 

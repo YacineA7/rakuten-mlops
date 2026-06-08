@@ -1,1 +1,1 @@
-# utils package
+# scripts package
