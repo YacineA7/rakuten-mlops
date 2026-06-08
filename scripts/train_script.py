@@ -335,7 +335,7 @@ def main():
         metrics["train_duration_seconds"].observe(perf_counter() - start)
 
     except Exception: # En cas d'erreur, incrémente les compteurs d'échec et observe la durée avant de push les métriques à Prometheus
-        metrics["train_mlflow_log_total"].labels(status="failed").inc()
+        metrics["train_mlflow_log_total"].labels(status="failed").inc() # Incrémente le compteur de logs MLflow échoués
         metrics["train_duration_seconds"].observe(perf_counter() - start)
         try:
             push_to_gateway(PROMETHEUS_PUSHGATEWAY_URL, job=JOB_NAME, registry=registry)

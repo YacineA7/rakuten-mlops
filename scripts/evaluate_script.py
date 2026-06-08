@@ -256,6 +256,7 @@ def main():
             push_to_gateway(PROMETHEUS_PUSHGATEWAY_URL, job=JOB_NAME, registry=registry)
         except Exception as push_error:
             print(f"[EVAL][PROMETHEUS] Push impossible : {push_error}")
+            
         raise
 
     try:

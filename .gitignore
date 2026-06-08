@@ -31,8 +31,6 @@ predictions/
 data/interim/
 data/processed/
 
-# Fichiers de données brutes
-data/raw/
 
 # MLRuns
 C/
