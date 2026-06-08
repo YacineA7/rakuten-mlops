@@ -22,7 +22,7 @@ app = FastAPI(
     version="1.0.0"
 )
 
-predictor = RakutenPredictor() # Chargement des artéfacts
+predictor = None # Chargement des artéfacts
 
 REQUEST_COUNT = Counter(
     "rakuten_api_requests_total",
@@ -101,6 +101,16 @@ MODEL_INFO_REQUESTS_TOTAL = Counter(
     "rakuten_api_model_info_requests_total",
     "Nombre total d'appels à l'endpoint /model-info"
 )
+
+
+@app.on_event("startup")
+def load_predictor():
+    global predictor
+    try:
+        predictor = RakutenPredictor()
+    except Exception as e:
+        predictor = None
+        print(f"[API] Predictor non disponible au démarrage: {e}")
 
 
 @app.middleware("http")

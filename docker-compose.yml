@@ -27,9 +27,9 @@ services:
     container_name: rakuten-ingest
     working_dir: /app
     volumes:
-      - ./:/app
-      - ./data:/app/data
-      - ./artifacts:/app/artifacts
+     - ${PROJECT_PATH}:/app
+     - ${PROJECT_PATH}/data:/app/data
+     - ${PROJECT_PATH}/artifacts:/app/artifacts
     environment:
       PYTHONPATH: /app
       PROMETHEUS_PUSHGATEWAY_URL: http://pushgateway:9091
@@ -42,10 +42,10 @@ services:
     container_name: rakuten-train
     working_dir: /app
     volumes:
-      - ./:/app
-      - ./artifacts:/app/artifacts
-      - ./models:/app/models
-      - ./mlruns:/app/mlruns
+      - ${PROJECT_PATH}:/app
+      - ${PROJECT_PATH}/artifacts:/app/artifacts
+      - ${PROJECT_PATH}/models:/app/models
+      - ${PROJECT_PATH}/mlruns:/app/mlruns
     environment:
       MLFLOW_TRACKING_URI: http://mlflow:5000
       PYTHONPATH: /app
@@ -62,11 +62,11 @@ services:
     container_name: rakuten-predict
     working_dir: /app
     volumes:
-      - ./:/app
-      - ./data:/app/data
-      - ./artifacts:/app/artifacts
-      - ./models:/app/models
-      - ./predictions:/app/predictions
+      - ${PROJECT_PATH}:/app
+      - ${PROJECT_PATH}/data:/app/data
+      - ${PROJECT_PATH}/artifacts:/app/artifacts
+      - ${PROJECT_PATH}/models:/app/models
+      - ${PROJECT_PATH}/predictions:/app/predictions
     environment:
       PYTHONPATH: /app
       PROMETHEUS_PUSHGATEWAY_URL: http://pushgateway:9091
@@ -79,10 +79,10 @@ services:
     container_name: rakuten-evaluate
     working_dir: /app
     volumes:
-      - ./:/app
-      - ./artifacts:/app/artifacts
-      - ./models:/app/models
-      - ./reports:/app/reports
+      - ${PROJECT_PATH}:/app
+      - ${PROJECT_PATH}/artifacts:/app/artifacts
+      - ${PROJECT_PATH}/models:/app/models
+      - ${PROJECT_PATH}/reports:/app/reports
     environment:
       PYTHONPATH: /app
       PROMETHEUS_PUSHGATEWAY_URL: http://pushgateway:9091
@@ -97,7 +97,7 @@ services:
     container_name: rakuten-reload
     working_dir: /app
     volumes:
-      - ./:/app
+      - ${PROJECT_PATH}:/app
     environment:
       PYTHONPATH: /app
       RAKUTEN_API_URL: http://api:8000
@@ -125,9 +125,9 @@ services:
     container_name: rakuten-api
     working_dir: /app
     volumes:
-      - ./:/app
-      - ./artifacts:/app/artifacts
-      - ./models:/app/models
+      - ${PROJECT_PATH}:/app
+      - ${PROJECT_PATH}/artifacts:/app/artifacts
+      - ${PROJECT_PATH}/models:/app/models
     environment:
       MLFLOW_TRACKING_URI: http://mlflow:5000
       PROMETHEUS_PUSHGATEWAY_URL: http://pushgateway:9091
@@ -166,11 +166,11 @@ services:
       AIRFLOW_UID: 50000
       COMPOSE_PROJECT_NAME: projet-rakuten
     volumes:
-      - ./:/opt/airflow/project
-      - ./dags:/opt/airflow/dags
-      - ./airflow/logs:/opt/airflow/logs
-      - ./airflow/plugins:/opt/airflow/plugins
-      - ./airflow/config:/opt/airflow/config
+      - ${PROJECT_PATH}:/opt/airflow/project
+      - ${PROJECT_PATH}/dags:/opt/airflow/dags
+      - ${PROJECT_PATH}/airflow/logs:/opt/airflow/logs
+      - ${PROJECT_PATH}/airflow/plugins:/opt/airflow/plugins
+      - ${PROJECT_PATH}/airflow/config:/opt/airflow/config
       - /var/run/docker.sock:/var/run/docker.sock
     user: "${AIRFLOW_UID:-50000}:0"
     depends_on:

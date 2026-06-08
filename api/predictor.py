@@ -8,12 +8,13 @@ Il inclut également les fonctions pour interagir avec MLflow Registry, telles q
 - Promouvoir une version test en prod et archiver les anciennes versions prod
 """
 
+from datetime import time
 import os
 from pathlib import Path
 
 import joblib
 import mlflow
-from mlflow import MlflowClient
+from mlflow import MlflowClient, MlflowException
 
 from utils.preprocessing import preprocess_product_text
 
@@ -38,12 +39,30 @@ class RakutenPredictor:
         self.model_name = None
         self.model_version = None
 
-        self.reload_prod_model()
+        try:
+            self.reload_prod_model()
+        except Exception as e:
+            print(f"[API] Predictor initialisé sans modèle chargé: {e}")
+
+
+    def _retry(self, fn, retries=10, delay=2):
+        last_err = None
+        for _ in range(retries):
+            try:
+                return fn()
+            except (ConnectionError, MlflowException, OSError) as e:
+                last_err = e
+                time.sleep(delay)
+        raise last_err
 
 
     def _list_versions(self):
         """Récupère toutes les versions du modèle dans MLflow Registry."""
-        return list(self.client.search_model_versions(f"name = '{MODEL_NAME}'"))
+        try:
+            return list(self.client.search_model_versions(f"name = '{MODEL_NAME}'"))
+        except Exception as e:
+            print(f"[API] Impossible de lire le registry MLflow: {e}")
+            return []
 
 
     def _get_status(self, version):
@@ -104,18 +123,18 @@ class RakutenPredictor:
 
     def reload_prod_model(self):
         """Charge le modèle actuellement en production depuis MLflow Registry. Si aucun modèle n'est en prod, charge la version la plus récente disponible."""
-        selected_version = self._get_latest_version_by_status("prod")
+        versions = self._retry(self._list_versions, retries=15, delay=2)
+        prod_versions = [v for v in versions if v.tags.get("stage") == "prod"]
 
-        if selected_version is None:
-            selected_version = self._get_latest_version()
+        if not prod_versions:
+            print("[API] Aucun modèle prod trouvé, API démarrée sans modèle.")
+            self.current_model = None
+            self.current_version = None
+            return False
 
-        if selected_version is None:
-            raise RuntimeError(f"Aucune version trouvée pour le modèle {MODEL_NAME} dans MLflow Registry.")
-
-        model_uri = f"models:/{MODEL_NAME}/{selected_version.version}"
-        self.model = mlflow.sklearn.load_model(model_uri)
-        self.model_name = MODEL_NAME
-        self.model_version = selected_version.version
+        selected_version = sorted(prod_versions, key=lambda v: int(v.version))[-1]
+        self._load_model_version(selected_version)
+        return True
 
 
     def predict(self, designation: str, description: str) -> int:
