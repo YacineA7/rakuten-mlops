@@ -9,6 +9,7 @@ from pathlib import Path
 from nltk.stem import SnowballStemmer
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.preprocessing import LabelEncoder
+import pytest
 import scripts.predict_script as ps
 
 

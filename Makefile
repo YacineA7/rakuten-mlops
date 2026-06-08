@@ -2,7 +2,7 @@ COMPOSE = docker compose
 AIRFLOW = $(COMPOSE) exec airflow-webserver airflow
 API = http://localhost:8080
 
-.PHONY: help build up down restart logs ps ingest train evaluate reload pipeline airflow-ui mlflow-ui grafana-ui prometheus-ui api-info api-metrics predict clean
+.PHONY: help build up down restart logs ps ingest train evaluate reload pipeline airflow-ui mlflow-ui grafana-ui prometheus-ui api-info api-metrics predict clean test
 
 help:
 	@echo "Commandes disponibles:"
@@ -25,6 +25,7 @@ help:
 	@echo "  make api-metrics  - Teste GET /metrics via le gateway"
 	@echo "  make predict      - Exemple POST /predict via le gateway"
 	@echo "  make clean        - Stoppe et supprime volumes orphelins"
+	@echo "  make test         - Lance les tests unitaires avec pytest"
 
 build:
 	$(COMPOSE) build
@@ -60,6 +61,9 @@ pipeline:
 	$(MAKE) train
 	$(MAKE) evaluate
 	$(MAKE) reload
+
+test:
+	pytest tests/
 
 airflow-ui:
 	@echo "Airflow: http://localhost:8081 (admin/admin)"

@@ -627,6 +627,11 @@ Rakuten-MLE-DEC25/
 │   ├── push_metrics.py              # Push manuel des métriques vers Prometheus Pushgateway
 │   └── reload_script.py             # Reload du modèle dans l'API
 │
+├── 📁 tests/                      # Configuration Nginx
+│   ├── conftest.py                  # Fichier de configuration pour les tests unitaires avec pytest
+│   ├── test_api.py                  # Test des endpoints de l'API
+│   └── test_scripts.py              # Test des fonctions de preprocessing du pipeline
+│
 ├── 📁 dags/                         # DAGs Airflow
 │    └── rakuten-pipeline.py          # DAG : ingest → train → evaluate → reload
 │
