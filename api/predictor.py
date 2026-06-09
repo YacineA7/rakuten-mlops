@@ -123,18 +123,23 @@ class RakutenPredictor:
 
     def reload_prod_model(self):
         """Charge le modèle actuellement en production depuis MLflow Registry. Si aucun modèle n'est en prod, charge la version la plus récente disponible."""
-        versions = self._retry(self._list_versions, retries=15, delay=2)
-        prod_versions = [v for v in versions if v.tags.get("stage") == "prod"]
+        selected_version = self._get_latest_version_by_status("prod")
+        if selected_version is None:
+            selected_version = self._get_latest_version()
+        if selected_version is None:
+            # Pas de modèle disponible — on ne crashe pas, l'API démarre quand même
+            self.model = None
+            self.model_name = None
+            self.model_version = None
+            return
 
-        if not prod_versions:
-            print("[API] Aucun modèle prod trouvé, API démarrée sans modèle.")
-            self.current_model = None
-            self.current_version = None
-            return False
-
-        selected_version = sorted(prod_versions, key=lambda v: int(v.version))[-1]
-        self._load_model_version(selected_version)
-        return True
+        model_uri = f"models:/{MODEL_NAME}/{selected_version.version}"
+        self.model = mlflow.sklearn.load_model(model_uri)
+        self.model_name = MODEL_NAME
+        self.model_version = selected_version.version
+        
+        self.tfidf = joblib.load(TFIDF_PATH)
+        self.label_encoder = joblib.load(LABEL_ENCODER_PATH)
 
 
     def predict(self, designation: str, description: str) -> int:
@@ -151,8 +156,9 @@ class RakutenPredictor:
 
     def promote_test_if_better(self):
         """
-        Promeut en prod la meilleure version test selon f1_weighted
-        et archive les anciennes prod.
+        Promeut en prod la meilleure version test selon f1_weighted,
+        uniquement si elle est strictement meilleure que le modèle prod actuel.
+        Archive les anciennes versions prod si promotion effectuée.
         """
         versions = self._list_versions()
         if not versions:
@@ -160,18 +166,30 @@ class RakutenPredictor:
 
         target_version = self._pick_best_test_version(versions)
         if target_version is None:
-            return {
-                "action": "no_test_available",
-                "message": "Aucun modèle test disponible"
-            }
+            return {"action": "no_test_available", "message": "Aucun modèle test disponible"}
 
         target_score = self._get_metric(target_version, SELECTION_METRIC)
+
+        current_prod_version = self._get_latest_version_by_status("prod")
+        current_prod_score = self._get_metric(current_prod_version, SELECTION_METRIC)
+
+        # Ne promouvoir que si le test est strictement meilleur
+        if current_prod_version is not None and target_score <= current_prod_score:
+            self.reload_prod_model() # Assure que le modèle en prod est bien chargé dans l'API même si pas de promotion
+            return {
+                "action": "kept_prod",
+                "selection_metric": SELECTION_METRIC,
+                "reason": "Le modèle prod actuel est meilleur ou égal au meilleur modèle test",
+                "prod_version": str(current_prod_version.version),
+                "prod_score": current_prod_score,
+                "test_version": str(target_version.version),
+                "test_score": target_score,
+            }
 
         current_prod_versions = [
             v for v in versions
             if self._get_status(v) == "prod" and str(v.version) != str(target_version.version)
         ]
-
         current_prod_version = (
             max(current_prod_versions, key=lambda v: int(v.version))
             if current_prod_versions else None
@@ -180,19 +198,11 @@ class RakutenPredictor:
 
         for v in current_prod_versions:
             self.client.set_model_version_tag(
-                name=MODEL_NAME,
-                version=str(v.version),
-                key="status",
-                value="archive"
+                name=MODEL_NAME, version=str(v.version), key="status", value="archive"
             )
-
         self.client.set_model_version_tag(
-            name=MODEL_NAME,
-            version=str(target_version.version),
-            key="status",
-            value="prod"
+            name=MODEL_NAME, version=str(target_version.version), key="status", value="prod"
         )
-
         self.reload_prod_model()
 
         result = {
@@ -201,14 +211,12 @@ class RakutenPredictor:
             "new_prod_version": str(target_version.version),
             "test_version": str(target_version.version),
             "test_score": target_score,
-            "reason": "Meilleure version test sélectionnée selon f1_weighted"
+            "reason": f"Meilleure version test sélectionnée selon {SELECTION_METRIC}",
         }
-
         if current_prod_version is not None:
             result["prod_version"] = str(current_prod_version.version)
             result["prod_score"] = current_prod_score
             result["archived_version"] = str(current_prod_version.version)
-
         if current_prod_versions:
             result["archived_versions"] = [str(v.version) for v in current_prod_versions]
 

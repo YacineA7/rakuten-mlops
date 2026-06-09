@@ -35,8 +35,8 @@ Y_TRAIN_PATH = DATA_DIR / "Y_train_CVw08PX.csv"
 
 def load_raw_data(x_path: Path, y_path: Path) -> pd.DataFrame:
     """Charge les données d'entraînement et de validation à partir des fichiers CSV."""
-    x_train = pd.read_csv(x_path)
-    y_train = pd.read_csv(y_path)
+    x_train = pd.read_csv(x_path, nrows=1000) # Limite à 1000 lignes pour un chargement plus rapide pendant le développement
+    y_train = pd.read_csv(y_path, nrows=1000) # Limite à 1000 lignes pour un chargement plus rapide pendant le développement
 
     raw_data = pd.merge(
         x_train,
@@ -86,7 +86,7 @@ def vectorize_text(X_train: pd.Series, X_valid: pd.Series) -> tuple:
     """
     # Initialisation de TfidfVectorizer avec des paramètres pour limiter le nombre de features et les n-grams
     tfidf = TfidfVectorizer(
-        max_features=100, # Limite le nombre de features à 100 avec TF-IDF pour un entraînement plus rapide
+        max_features=500, # Limite le nombre de features à 500 avec TF-IDF pour un entraînement plus rapide
         ngram_range=(1, 2),
         min_df=2,
         max_df=0.95
@@ -133,7 +133,7 @@ def save_artifacts(X_train, y_train, X_valid, y_valid, tfidf, label_encoder, art
             "stratify": True
         },
         "tfidf_params": {
-            "max_features": 100,
+            "max_features": 500,
             "ngram_range": (1, 2),
             "min_df": 2,
             "max_df": 0.95

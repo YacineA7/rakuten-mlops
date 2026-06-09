@@ -3,16 +3,25 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: rakuten-mlflow
     working_dir: /app
     volumes:
       - ./:/app
       - ./mlruns:/app/mlruns
+    expose:
+      - "5000"
     ports:
       - "5000:5000"
     environment:
-      MLFLOW_SERVER_ALLOWED_HOSTS: "mlflow:5000,localhost:5000,127.0.0.1:5000,localhost,127.0.0.1"
+      MLFLOW_SERVER_ALLOWED_HOSTS: "*"
+    networks:
+      - rakuten-network  
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
     command: >
       sh -c "mlflow server
       --backend-store-uri sqlite:///mlflow.db
@@ -33,13 +42,14 @@ services:
     environment:
       PYTHONPATH: /app
       PROMETHEUS_PUSHGATEWAY_URL: http://pushgateway:9091
+    networks:
+      - rakuten-network
     command: python /app/scripts/ingest_script.py
 
   train:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: rakuten-train
     working_dir: /app
     volumes:
       - ${PROJECT_PATH}:/app
@@ -47,19 +57,22 @@ services:
       - ${PROJECT_PATH}/models:/app/models
       - ${PROJECT_PATH}/mlruns:/app/mlruns
     environment:
-      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MLFLOW_TRACKING_URI: http://host.docker.internal:5000
       PYTHONPATH: /app
       PROMETHEUS_PUSHGATEWAY_URL: http://pushgateway:9091
+    networks:
+      - rakuten-network
     depends_on:
-      - mlflow
-      - pushgateway
+      mlflow:
+        condition: service_healthy
+      pushgateway:
+        condition: service_started
     command: python /app/scripts/train_script.py
 
   predict:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: rakuten-predict
     working_dir: /app
     volumes:
       - ${PROJECT_PATH}:/app
@@ -70,13 +83,14 @@ services:
     environment:
       PYTHONPATH: /app
       PROMETHEUS_PUSHGATEWAY_URL: http://pushgateway:9091
+    networks:
+      - rakuten-network
     command: python /app/scripts/predict_script.py
 
   evaluate:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: rakuten-evaluate
     working_dir: /app
     volumes:
       - ${PROJECT_PATH}:/app
@@ -86,6 +100,8 @@ services:
     environment:
       PYTHONPATH: /app
       PROMETHEUS_PUSHGATEWAY_URL: http://pushgateway:9091
+    networks:
+      - rakuten-network
     depends_on:
       - pushgateway
     command: python /app/scripts/evaluate_script.py
@@ -94,7 +110,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: rakuten-reload
     working_dir: /app
     volumes:
       - ${PROJECT_PATH}:/app
@@ -102,14 +117,19 @@ services:
       PYTHONPATH: /app
       RAKUTEN_API_URL: http://api:8000
       PROMETHEUS_PUSHGATEWAY_URL: http://pushgateway:9091
+    networks:
+      - rakuten-network
     depends_on:
-      - api
-      - pushgateway
+      mlflow:
+        condition: service_healthy
+      pushgateway:
+        condition: service_started
     command: python /app/scripts/reload_script.py
 
   gateway:
     image: nginx:1.27-alpine
     container_name: rakuten-gateway
+
     depends_on:
       - api
     ports:
@@ -117,6 +137,8 @@ services:
     volumes:
       - ./gateway/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./gateway/.htpasswd:/etc/nginx/.htpasswd:ro
+    networks:
+      - rakuten-network
 
   api:
     build:
@@ -133,8 +155,13 @@ services:
       PROMETHEUS_PUSHGATEWAY_URL: http://pushgateway:9091
     expose:
       - "8000"
+    networks:
+      - rakuten-network
     depends_on:
-      - mlflow
+      mlflow:
+        condition: service_healthy
+      pushgateway:
+        condition: service_started
     command: uvicorn api.main:app --host 0.0.0.0 --port 8000
 
   airflow-postgres:
@@ -146,6 +173,8 @@ services:
       POSTGRES_DB: airflow
     volumes:
       - airflow-postgres-db-volume:/var/lib/postgresql/data
+    networks:
+      - rakuten-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
       interval: 10s
@@ -164,7 +193,7 @@ services:
       AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "True"
       AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "False"
       AIRFLOW_UID: 50000
-      COMPOSE_PROJECT_NAME: projet-rakuten
+      COMPOSE_PROJECT_NAME: rakuten-mlops
     volumes:
       - ${PROJECT_PATH}:/opt/airflow/project
       - ${PROJECT_PATH}/dags:/opt/airflow/dags
@@ -172,6 +201,8 @@ services:
       - ${PROJECT_PATH}/airflow/plugins:/opt/airflow/plugins
       - ${PROJECT_PATH}/airflow/config:/opt/airflow/config
       - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - rakuten-network
     user: "${AIRFLOW_UID:-50000}:0"
     depends_on:
       airflow-postgres:
@@ -225,13 +256,16 @@ services:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
+    networks:
+      - rakuten-network
     restart: unless-stopped
 
   pushgateway:
     image: prom/pushgateway:v1.8.0
-    container_name: rakuten-pushgateway
-    ports:
-      - "9091:9091"
+    expose:
+      - "9091"
+    networks:
+      - rakuten-network
     restart: unless-stopped
 
   grafana:
@@ -249,7 +283,13 @@ services:
       - ./monitoring/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
       - ./monitoring/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
       - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks:
+      - rakuten-network
     restart: unless-stopped
     
 volumes:
   airflow-postgres-db-volume:
+
+networks:
+  rakuten-network:
+    driver: bridge

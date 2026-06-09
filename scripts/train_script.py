@@ -17,7 +17,7 @@ import mlflow.sklearn
 from mlflow import MlflowClient
 
 import os
-from time import perf_counter
+from time import perf_counter, sleep
 from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, push_to_gateway
 
 import warnings
@@ -33,7 +33,6 @@ MODEL_DIR.mkdir(parents=True, exist_ok=True) # Création du dossier si il n'exis
 PROMETHEUS_PUSHGATEWAY_URL = os.getenv("PROMETHEUS_PUSHGATEWAY_URL", "pushgateway:9091")
 JOB_NAME = "rakuten_train"
 
-mlflow.set_experiment(EXPERIMENT_NAME) # Définit l'expérience MLflow : tous les runs seront organisés sous ce nom d'expérience
 
 def load_data():
     """
@@ -148,13 +147,28 @@ def evaluate_model(model, X_valid, y_valid):
     return metrics
 
 
+def wait_for_mlflow(tracking_uri, retries=10, delay=3):
+    for i in range(retries):
+        try:
+            mlflow.set_tracking_uri(tracking_uri)
+            client = MlflowClient(tracking_uri=tracking_uri)
+            client.list_experiments()
+            return
+        except Exception:
+            if i == retries - 1:
+                raise
+            sleep(delay)
+
+
 def log_to_mlflow(model, params: dict, metrics: dict | None):
     """
     Enregistre les paramètres, les métriques et le modèle dans MLflow pour le suivi des expériences.
     """
     tracking_uri = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")
+    wait_for_mlflow(tracking_uri)
+
     mlflow.set_tracking_uri(tracking_uri)
-    mlflow.set_experiment(EXPERIMENT_NAME)
+    mlflow.set_experiment(EXPERIMENT_NAME) # Définit l'expérience MLflow : tous les runs seront organisés sous ce nom d'expérience
     MODEL_NAME = "xgboost_text_tfidf"
 
     print("[TRAIN][MLFLOW] Enregistrement du modèle et des métriques dans MLflow...")
